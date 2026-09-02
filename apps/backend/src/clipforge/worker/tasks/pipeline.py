@@ -15,7 +15,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from clipforge.core.errors import ClipForgeError
@@ -26,8 +26,23 @@ from clipforge.core.storage import (
     absolute_from_storage,
     relative_to_storage,
 )
-from clipforge.db.models import Project, ProjectStatus, Transcript, TranscriptSegment
+from clipforge.db.models import (
+    CandidateStatus,
+    ClipCandidate,
+    Project,
+    ProjectStatus,
+    Transcript,
+    TranscriptSegment,
+)
 from clipforge.db.session import sync_session_scope
+from clipforge.services.ai import (
+    AnalysisContext,
+    ClipAnalyzer,
+    ClipSuggestion,
+    get_analyzer,
+    select_clips,
+)
+from clipforge.services.ai.chunking import to_analysis_segments
 from clipforge.services.download.base import VideoDownloader
 from clipforge.services.download.ytdlp import YtDlpDownloader
 from clipforge.services.source.urls import validate_source_url
@@ -47,7 +62,7 @@ def process_project(self: Any, project_id: str) -> dict[str, Any]:
     """Procesa un proyecto de principio a fin.
 
     FASE 2: descarga y metadatos. FASE 3: audio y transcripción.
-    El análisis de IA y el render llegan en las fases siguientes.
+    FASE 4: detección de los mejores momentos. El render llega en la FASE 5.
     """
     pid = uuid.UUID(project_id)
     log = logger.bind(project_id=project_id, task_id=self.request.id)
@@ -55,6 +70,7 @@ def process_project(self: Any, project_id: str) -> dict[str, Any]:
     try:
         _download_stage(pid, log)
         _transcribe_stage(pid, log)
+        _analyze_stage(pid, log)
     except ClipForgeError as exc:
         # Error esperado (fuente no disponible, ffmpeg, Whisper sin GPU):
         # el mensaje es apto para enseñárselo al usuario.
@@ -66,8 +82,8 @@ def process_project(self: Any, project_id: str) -> dict[str, Any]:
         _update(pid, status=ProjectStatus.FAILED, error_message=f"Error inesperado: {exc}")
         raise
 
-    # FASE 4: encadenar aquí el análisis de IA. Mientras la transcripción sea la
-    # última etapa implementada, el proyecto se da por terminado al acabarla.
+    # FASE 5: encadenar aquí el render de los clips. Mientras el análisis sea la
+    # última etapa implementada, el proyecto se da por terminado al acabarlo.
     _update(pid, status=ProjectStatus.COMPLETED)
     _cleanup(pid, log)
     log.info("pipeline.completed")
@@ -190,6 +206,81 @@ def _save_transcript(
             for segment in result.segments
         )
         project.audio_path = audio_relative
+
+
+# ------------------------------------------------------------------- análisis IA
+def _analyze_stage(project_id: uuid.UUID, log: Any, analyzer: ClipAnalyzer | None = None) -> None:
+    """Detecta los mejores momentos y los guarda como candidatos puntuados."""
+    with sync_session_scope() as session:
+        project = _require(session, project_id)
+        transcript = session.execute(
+            select(Transcript).where(Transcript.project_id == project_id)
+        ).scalar_one_or_none()
+        if transcript is None:
+            raise ClipForgeError("El proyecto no tiene transcripción que analizar")
+
+        rows = list(
+            session.execute(
+                select(TranscriptSegment)
+                .where(TranscriptSegment.transcript_id == transcript.id)
+                .order_by(TranscriptSegment.index)
+            ).scalars()
+        )
+        segments = to_analysis_segments(rows)
+        context = AnalysisContext(
+            title=project.title, author=project.author, language=transcript.language
+        )
+        project.status = ProjectStatus.ANALYZING
+
+    if not segments:
+        raise ClipForgeError("La transcripción no tiene segmentos que analizar")
+
+    log.info("pipeline.analysis_started", segments=len(segments))
+    suggestions = select_clips(segments, context, analyzer or get_analyzer())
+    if not suggestions:
+        raise ClipForgeError("La IA no ha encontrado ningún momento aprovechable en este vídeo")
+
+    _save_candidates(project_id, suggestions)
+    log.info(
+        "pipeline.analysis_finished",
+        candidates=len(suggestions),
+        best_score=suggestions[0].score,
+    )
+
+
+def _save_candidates(project_id: uuid.UUID, suggestions: list[ClipSuggestion]) -> None:
+    """Reemplaza los candidatos del proyecto por los recién seleccionados."""
+    with sync_session_scope() as session:
+        _require(session, project_id)
+        # Igual que con la transcripción: un reintento deja un único conjunto.
+        session.execute(delete(ClipCandidate).where(ClipCandidate.project_id == project_id))
+        session.flush()
+
+        session.add_all(
+            ClipCandidate(
+                project_id=project_id,
+                start_time=item.start_time,
+                end_time=item.end_time,
+                start_segment_index=item.start_segment,
+                end_segment_index=item.end_segment,
+                title=item.title,
+                hook=item.hook,
+                reason=item.reason,
+                transcript_excerpt=item.transcript_excerpt,
+                score=item.score,
+                hook_score=item.scores.hook,
+                curiosity_score=item.scores.curiosity,
+                emotion_score=item.scores.emotion,
+                clarity_score=item.scores.clarity,
+                value_score=item.scores.value,
+                shareability_score=item.scores.shareability,
+                duration_score=item.scores.duration,
+                # Seleccionados: son los que renderizará la FASE 5.
+                status=CandidateStatus.SELECTED,
+                rank=position,
+            )
+            for position, item in enumerate(suggestions, start=1)
+        )
 
 
 # ----------------------------------------------------------------------- comunes

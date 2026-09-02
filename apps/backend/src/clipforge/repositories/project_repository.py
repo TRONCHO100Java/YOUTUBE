@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from clipforge.db.models import Project, Transcript
+from clipforge.db.models import ClipCandidate, Project, Transcript
 
 
 class ProjectRepository:
@@ -50,6 +50,16 @@ class ProjectRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_candidates(self, project_id: uuid.UUID) -> Sequence[ClipCandidate]:
+        """Candidatos del proyecto, del mejor al peor."""
+        stmt = (
+            select(ClipCandidate)
+            .where(ClipCandidate.project_id == project_id)
+            .order_by(ClipCandidate.score.desc(), ClipCandidate.start_time)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
 
     async def delete(self, project: Project) -> None:
         await self.session.delete(project)

@@ -11,7 +11,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from clipforge.core.paths import REPO_ROOT
 
-AIProvider = Literal["openai", "anthropic", "ollama", "mock"]
+# Sin "mock": la aplicación no lleva simulaciones. El analizador de prueba
+# vive en los tests, que es donde tiene sentido.
+AIProvider = Literal["ollama", "openai", "anthropic"]
 LogFormat = Literal["console", "json"]
 
 
@@ -96,8 +98,8 @@ class Settings(BaseSettings):
     whisper_vad_filter: bool = True
 
     # ------------------------------------------------------------------- ia
-    ai_provider: AIProvider = "openai"
-    ai_model: str = "gpt-4o-mini"
+    ai_provider: AIProvider = "ollama"
+    ai_model: str = "qwen2.5:14b"
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     ollama_base_url: str = "http://localhost:11434"

@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter, Query, status
 
 from clipforge.api.deps import ProjectRepo
+from clipforge.api.schemas.candidate import ClipCandidateRead
 from clipforge.api.schemas.common import Page
 from clipforge.api.schemas.project import ProjectCreate, ProjectDetail, ProjectSummary
 from clipforge.api.schemas.transcript import TranscriptRead, TranscriptSegmentRead
@@ -111,6 +112,17 @@ async def get_transcript(
             for segment in transcript.segments
         ],
     )
+
+
+@router.get(
+    "/{project_id}/candidates",
+    response_model=list[ClipCandidateRead],
+    summary="Momentos detectados por la IA",
+)
+async def list_candidates(project_id: uuid.UUID, repo: ProjectRepo) -> list[ClipCandidateRead]:
+    await _require(project_id, repo)
+    candidates = await repo.list_candidates(project_id)
+    return [ClipCandidateRead.from_model(candidate) for candidate in candidates]
 
 
 @router.post(

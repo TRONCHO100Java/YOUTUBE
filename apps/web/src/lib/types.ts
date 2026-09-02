@@ -43,6 +43,30 @@ export interface ProjectDetail extends ProjectSummary {
   progress: number;
 }
 
+export interface ClipScoreBreakdown {
+  hook: number | null;
+  curiosity: number | null;
+  emotion: number | null;
+  clarity: number | null;
+  value: number | null;
+  shareability: number | null;
+  duration: number | null;
+}
+
+export interface ClipCandidate {
+  id: string;
+  project_id: string;
+  rank: number | null;
+  start_time: number;
+  end_time: number;
+  duration: number;
+  title: string;
+  hook: string | null;
+  reason: string | null;
+  score: number;
+  scores: ClipScoreBreakdown;
+}
+
 export interface Page<T> {
   items: T[];
   total: number;
@@ -60,3 +84,14 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   COMPLETED: "Finalizado",
   FAILED: "Error",
 };
+
+/** Etiquetas de cada dimensión de la puntuación, con su máximo. */
+export const SCORE_LABELS: Array<[keyof ClipScoreBreakdown, string, number]> = [
+  ["hook", "Gancho", 20],
+  ["curiosity", "Curiosidad", 20],
+  ["emotion", "Emoción", 15],
+  ["clarity", "Claridad", 15],
+  ["value", "Valor", 15],
+  ["shareability", "Compartir", 10],
+  ["duration", "Duración", 5],
+];

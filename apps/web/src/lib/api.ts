@@ -1,5 +1,11 @@
 import { API_BASE_URL } from "@/lib/config";
-import type { Page, ProjectDetail, ProjectSummary, Readiness } from "@/lib/types";
+import type {
+  ClipCandidate,
+  Page,
+  ProjectDetail,
+  ProjectSummary,
+  Readiness,
+} from "@/lib/types";
 
 /** Error con la forma que devuelve el manejador central de la API. */
 export class ApiError extends Error {
@@ -70,6 +76,11 @@ export function createProject(url: string): Promise<ProjectDetail> {
 /** Reprocesa un proyecto terminado o fallido. */
 export function retryProject(id: string): Promise<ProjectDetail> {
   return apiFetch<ProjectDetail>(`/api/projects/${id}/retry`, { method: "POST" });
+}
+
+/** Momentos detectados por la IA, del mejor al peor. */
+export function listCandidates(projectId: string): Promise<ClipCandidate[]> {
+  return apiFetch<ClipCandidate[]>(`/api/projects/${projectId}/candidates`);
 }
 
 export function listProjects(limit = 20, offset = 0): Promise<Page<ProjectSummary>> {
