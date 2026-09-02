@@ -19,6 +19,11 @@ class ProjectRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def add(self, project: Project) -> Project:
+        self.session.add(project)
+        await self.session.flush()
+        return project
+
     async def get(self, project_id: uuid.UUID) -> Project | None:
         return await self.session.get(Project, project_id)
 

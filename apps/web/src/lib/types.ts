@@ -32,8 +32,15 @@ export interface ProjectSummary {
   title: string | null;
   duration: number | null;
   thumbnail_url: string | null;
+  error_message: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  author: string | null;
+  /** Avance del pipeline entre 0 y 1, derivado del estado. */
+  progress: number;
 }
 
 export interface Page<T> {

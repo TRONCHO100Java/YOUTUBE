@@ -8,6 +8,19 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from clipforge.db.models.enums import PIPELINE_ORDER, ProjectStatus, SourceType
+from clipforge.services.source.urls import MAX_URL_LENGTH
+
+
+class ProjectCreate(BaseModel):
+    """Cuerpo de POST /projects."""
+
+    url: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_URL_LENGTH,
+        description="URL del vídeo de YouTube a procesar",
+        examples=["https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
+    )
 
 
 class ProjectSummary(BaseModel):
@@ -22,6 +35,9 @@ class ProjectSummary(BaseModel):
     title: str | None
     duration: float | None
     thumbnail_url: str | None
+    # Se incluye en el listado para poder mostrar por qué falló un proyecto
+    # sin tener que pedir el detalle de cada uno.
+    error_message: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -30,7 +46,6 @@ class ProjectDetail(ProjectSummary):
     """Vista de detalle, la que consulta el polling del frontend."""
 
     author: str | None = None
-    error_message: str | None = None
     progress: float = Field(0.0, ge=0.0, le=1.0, description="Avance 0..1 del pipeline")
 
     @classmethod

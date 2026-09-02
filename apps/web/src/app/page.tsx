@@ -1,4 +1,4 @@
-import { RecentProjects } from "@/components/RecentProjects";
+import { ProjectsPanel } from "@/components/ProjectsPanel";
 import { SystemStatus } from "@/components/SystemStatus";
 
 export default function HomePage() {
@@ -15,9 +15,12 @@ export default function HomePage() {
         </p>
       </header>
 
+      <div className="mt-10">
+        <ProjectsPanel />
+      </div>
+
       <div className="mt-12">
         <SystemStatus />
-        <RecentProjects />
       </div>
     </main>
   );

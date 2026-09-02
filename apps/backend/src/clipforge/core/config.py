@@ -69,7 +69,13 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------- multimedia
     ffmpeg_path: str = "ffmpeg"
     ffprobe_path: str = "ffprobe"
-    ytdlp_format: str = "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"
+    # Se prioriza H.264 + AAC: son los códecs que mejor se cortan y re-codifican
+    # con NVENC. Sin esto YouTube sirve AV1 + Opus, que complica el render.
+    ytdlp_format: str = (
+        "bestvideo[vcodec^=avc1][height<=1080]+bestaudio[acodec^=mp4a]"
+        "/bestvideo[height<=1080]+bestaudio"
+        "/best[height<=1080]/best"
+    )
     video_encoder: Literal["auto", "h264_nvenc", "libx264"] = "auto"
     video_bitrate: str = "8M"
     output_width: int = 1080

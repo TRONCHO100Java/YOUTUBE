@@ -3,8 +3,9 @@
 Convierte vídeos largos en clips verticales 9:16 listos para publicar: descarga, transcribe,
 detecta los mejores momentos con IA, recorta y renderiza con aceleración NVIDIA.
 
-> **Estado actual: FASE 1 completada** — infraestructura, API, base de datos, worker y frontend
-> funcionando. La ingesta de vídeo (yt-dlp) llega en la FASE 2.
+> **Estado actual: FASE 2 completada** — pegas una URL de YouTube y el vídeo se descarga,
+> se analiza con ffprobe y queda en `storage/` con sus metadatos. La transcripción con
+> Whisper llega en la FASE 3.
 
 ---
 
@@ -124,7 +125,7 @@ npm run build
 │  │  │  ├─ db/                 engines, sesiones y modelos ORM
 │  │  │  ├─ api/                app FastAPI, routers, schemas, dependencias
 │  │  │  ├─ repositories/       acceso a datos
-│  │  │  ├─ services/           (FASE 2+) descarga, transcripción, IA, vídeo
+│  │  │  ├─ services/           source/ (URLs), download/ (yt-dlp), video/ (ffprobe)
 │  │  │  └─ worker/             Celery: app y tareas
 │  │  └─ tests/
 │  └─ web/                      Next.js 16 + TypeScript strict + Tailwind 4
@@ -147,7 +148,54 @@ RunPod solo requiere apuntarlos al mismo Redis y a la misma base de datos.
 Las colas están separadas desde el principio: `cpu` para trabajo ligero y `gpu` para el pipeline
 pesado (Whisper y FFmpeg).
 
-## 7. Modelo de datos
+## 7. API
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/projects` | Crea un proyecto desde una URL y encola su procesamiento |
+| `GET` | `/api/projects` | Lista paginada |
+| `GET` | `/api/projects/{id}` | Detalle, con `progress` para la barra de estado |
+| `POST` | `/api/projects/{id}/retry` | Reprocesa un proyecto terminado o fallido |
+| `DELETE` | `/api/projects/{id}` | Borra el proyecto y sus ficheros en disco |
+| `GET` | `/health`, `/health/ready` | Liveness y readiness |
+
+Todos los errores comparten la misma forma:
+
+```json
+{ "error": { "code": "unsupported_source", "message": "Host no permitido: vimeo.com", "details": {} } }
+```
+
+### Pipeline
+
+```
+POST /api/projects
+   └─ valida y normaliza la URL          (services/source/urls.py)
+   └─ crea el Project en estado CREATED
+   └─ encola clipforge.pipeline.process_project en la cola `gpu`
+
+worker
+   └─ DOWNLOADING
+   └─ descarga con yt-dlp                (services/download/ytdlp.py)
+   └─ lee metadatos reales con ffprobe   (services/video/probe.py)
+   └─ guarda título, autor, duración, miniatura y ruta del vídeo
+   └─ COMPLETED  (o FAILED con un mensaje legible)
+```
+
+La descarga se ejecuta **fuera de toda transacción**: puede durar minutos y no debe
+mantener ocupada una conexión de PostgreSQL. El estado se actualiza en transacciones
+cortas e independientes.
+
+### Validación de fuentes
+
+`validate_source_url` es la única puerta de entrada de contenido. Rechaza esquemas que no
+sean `http`/`https`, hosts fuera de `ALLOWED_SOURCE_HOSTS`, URLs con credenciales embebidas
+e identificadores mal formados; y **normaliza** cualquier variante (`youtu.be`, `/shorts/`,
+`/embed/`, `/live/`, parámetros de lista y tracking) a `https://www.youtube.com/watch?v=ID`.
+
+El nombre del fichero en disco se deriva del id ya validado (`{video_id}.mp4`), nunca del
+título elegido por un tercero.
+
+## 8. Modelo de datos
 
 ```
 Project ──1:1── Transcript ──1:N── TranscriptSegment
@@ -163,7 +211,7 @@ como estado terminal alternativo.
 rangos: **el modelo elige segmentos, nunca inventa timestamps**. El backend deriva los tiempos
 exactos a partir de los segmentos reales.
 
-## 8. Almacenamiento
+## 9. Almacenamiento
 
 ```
 storage/projects/{project_id}/
@@ -178,7 +226,7 @@ storage/projects/{project_id}/
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 
-## 9. Migraciones
+## 10. Migraciones
 
 ```powershell
 cd apps\backend
@@ -189,10 +237,10 @@ cd apps\backend
 
 Revisa siempre el fichero generado antes de aplicarlo.
 
-## 10. Hoja de ruta
+## 11. Hoja de ruta
 
 - [x] **FASE 1** — infraestructura, API, BD, worker, frontend
-- [ ] **FASE 2** — descarga con yt-dlp y creación de proyectos
+- [x] **FASE 2** — descarga con yt-dlp y creación de proyectos
 - [ ] **FASE 3** — transcripción con faster-whisper sobre CUDA
 - [ ] **FASE 4** — análisis de viralidad con LLM
 - [ ] **FASE 5** — recorte y render vertical con FFmpeg/NVENC

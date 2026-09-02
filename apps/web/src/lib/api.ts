@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "@/lib/config";
-import type { Page, ProjectSummary, Readiness } from "@/lib/types";
+import type { Page, ProjectDetail, ProjectSummary, Readiness } from "@/lib/types";
 
 /** Error con la forma que devuelve el manejador central de la API. */
 export class ApiError extends Error {
@@ -57,6 +57,19 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
  */
 export function getReadiness(): Promise<Readiness> {
   return apiFetch<Readiness>("/health/ready", { acceptStatuses: [503] });
+}
+
+/** Crea un proyecto y encola su procesamiento. */
+export function createProject(url: string): Promise<ProjectDetail> {
+  return apiFetch<ProjectDetail>("/api/projects", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+/** Reprocesa un proyecto terminado o fallido. */
+export function retryProject(id: string): Promise<ProjectDetail> {
+  return apiFetch<ProjectDetail>(`/api/projects/${id}/retry`, { method: "POST" });
 }
 
 export function listProjects(limit = 20, offset = 0): Promise<Page<ProjectSummary>> {

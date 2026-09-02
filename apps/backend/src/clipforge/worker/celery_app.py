@@ -20,7 +20,10 @@ celery_app = Celery(
     "clipforge",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["clipforge.worker.tasks.system"],
+    include=[
+        "clipforge.worker.tasks.system",
+        "clipforge.worker.tasks.pipeline",
+    ],
 )
 
 celery_app.conf.update(

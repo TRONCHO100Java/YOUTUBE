@@ -47,6 +47,19 @@ class UnsupportedSourceError(ValidationError):
     code = "unsupported_source"
 
 
+class SourceUnavailableError(ClipForgeError):
+    """El vídeo existe pero no se puede descargar: privado, borrado, de pago o con region-lock."""
+
+    status_code = 422
+    code = "source_unavailable"
+
+
+class SourceTooLongError(ValidationError):
+    """El vídeo supera el límite configurado de duración."""
+
+    code = "source_too_long"
+
+
 class ExternalToolError(ClipForgeError):
     """Fallo de una herramienta externa (yt-dlp, ffmpeg, whisper, LLM)."""
 
