@@ -1,0 +1,36 @@
+# ------------------------------------------------------------------ secretos
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# -------------------------------------------------------------------- python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------------------------------------------------------------------- node
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+
+# ------------------------------------------------------------------- storage
+storage/*
+!storage/.gitkeep
+
+# --------------------------------------------------------------------- otros
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

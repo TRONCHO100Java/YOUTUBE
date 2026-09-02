@@ -1,0 +1,29 @@
+"""Modelos ORM.
+
+Alembic importa este modulo para poblar `Base.metadata`, asi que toda entidad
+nueva debe re-exportarse aqui.
+"""
+
+from clipforge.db.base import Base
+from clipforge.db.models.clip import ClipCandidate, GeneratedClip
+from clipforge.db.models.enums import (
+    PIPELINE_ORDER,
+    CandidateStatus,
+    ProjectStatus,
+    SourceType,
+)
+from clipforge.db.models.project import Project
+from clipforge.db.models.transcript import Transcript, TranscriptSegment
+
+__all__ = [
+    "PIPELINE_ORDER",
+    "Base",
+    "CandidateStatus",
+    "ClipCandidate",
+    "GeneratedClip",
+    "Project",
+    "ProjectStatus",
+    "SourceType",
+    "Transcript",
+    "TranscriptSegment",
+]

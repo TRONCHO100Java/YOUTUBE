@@ -1,0 +1,12 @@
+# Normaliza finales de linea: LF en el repositorio, nativo en el working copy.
+* text=auto eol=lf
+
+# Los scripts de PowerShell se ejecutan en Windows.
+*.ps1 text eol=crlf
+
+# Binarios.
+*.png binary
+*.jpg binary
+*.ico binary
+*.mp4 binary
+*.woff2 binary

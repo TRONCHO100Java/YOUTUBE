@@ -1,0 +1,50 @@
+# Infraestructura de desarrollo de ClipForge.
+#
+# Solo Postgres y Redis: la API, el worker y el frontend se ejecutan en el host
+# porque el worker necesita acceso directo a la GPU (CUDA) y a FFmpeg con NVENC.
+# Meter el worker en Docker se evaluara mas adelante con NVIDIA Container Toolkit.
+#
+# Puertos: 5442/6390 en el host para no chocar con instalaciones locales de
+# Postgres/Redis que ya ocupan los puertos estandar.
+
+# Nombre explicito del proyecto: independiza los recursos Docker del nombre
+# de la carpeta, que contiene espacios.
+name: clipforge
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clipforge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clipforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clipforge}
+      POSTGRES_DB: ${POSTGRES_DB:-clipforge}
+    ports:
+      - "${POSTGRES_PORT:-5442}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clipforge} -d ${POSTGRES_DB:-clipforge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: clipforge-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6390}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:

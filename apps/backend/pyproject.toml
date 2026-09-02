@@ -1,0 +1,65 @@
+[project]
+name = "clipforge-backend"
+version = "0.1.0"
+description = "ClipForge - API + Worker: long-form video to vertical short clips"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.118",
+    "uvicorn[standard]>=0.37",
+    "pydantic>=2.11",
+    "pydantic-settings>=2.11",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.16",
+    "psycopg[binary]>=3.2",
+    "asyncpg>=0.30",
+    "celery[redis]>=5.5",
+    "redis>=5.2",
+    "structlog>=25.1",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28",
+    "ruff>=0.9",
+    "mypy>=1.14",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/clipforge"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+ignore = ["B008"]  # FastAPI Depends() en defaults es idiomatico
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+packages = ["clipforge"]
+strict = true
+warn_return_any = true
+disallow_untyped_decorators = false
+# redis expone py.typed pero deja helpers como `from_url` sin anotar.
+untyped_calls_exclude = ["redis"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
