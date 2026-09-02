@@ -8,10 +8,12 @@ FASE 5) necesitan la ruta real, así que la resolución se centraliza aquí.
 from __future__ import annotations
 
 import shutil
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 
 from clipforge.core.config import settings
+from clipforge.core.errors import ExternalToolError
 
 
 def resolve_binary(configured: str) -> Path | None:
@@ -49,3 +51,37 @@ def ffmpeg_directory() -> str | None:
     """
     binary = resolve_ffmpeg()
     return str(binary.parent) if binary else None
+
+
+def run_tool(
+    command: list[str], *, tool_name: str, timeout: int
+) -> subprocess.CompletedProcess[str]:
+    """Ejecuta una herramienta externa y normaliza sus fallos.
+
+    Siempre con lista de argumentos y sin `shell`: ningún dato del usuario puede
+    interpretarse como comando.
+    """
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise ExternalToolError(
+            f"No se encuentra {tool_name} en '{command[0]}'. "
+            f"Instálalo o define {tool_name.upper()}_PATH."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ExternalToolError(f"{tool_name} ha excedido el tiempo máximo ({timeout}s)") from exc
+
+    if completed.returncode != 0:
+        raise ExternalToolError(
+            f"{tool_name} ha fallado",
+            details={"stderr": (completed.stderr or "").strip()[-800:]},
+        )
+    return completed

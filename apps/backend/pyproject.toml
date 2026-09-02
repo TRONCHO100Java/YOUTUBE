@@ -17,9 +17,18 @@ dependencies = [
     "structlog>=25.1",
     "python-dotenv>=1.0",
     "yt-dlp>=2025.1.15",
+    "faster-whisper>=1.1",
 ]
 
 [project.optional-dependencies]
+# Librerías CUDA para la GPU. Van aparte porque pesan ~1,3 GB y una
+# instalación solo-CPU no las necesita. cuBLAS 12.8+ es imprescindible para
+# Blackwell (RTX 50xx, sm_120).
+gpu = [
+    "nvidia-cublas-cu12>=12.8",
+    "nvidia-cudnn-cu12>=9.0",
+]
+
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
@@ -57,7 +66,8 @@ disallow_untyped_decorators = false
 untyped_calls_exclude = ["redis"]
 
 [[tool.mypy.overrides]]
-module = ["celery.*"]
+# Ninguno de estos publica stubs ni marcador py.typed.
+module = ["celery.*", "faster_whisper.*", "ctranslate2.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

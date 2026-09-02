@@ -3,9 +3,9 @@
 Convierte vídeos largos en clips verticales 9:16 listos para publicar: descarga, transcribe,
 detecta los mejores momentos con IA, recorta y renderiza con aceleración NVIDIA.
 
-> **Estado actual: FASE 2 completada** — pegas una URL de YouTube y el vídeo se descarga,
-> se analiza con ffprobe y queda en `storage/` con sus metadatos. La transcripción con
-> Whisper llega en la FASE 3.
+> **Estado actual: FASE 3 completada** — pegas una URL de YouTube y obtienes una
+> transcripción completa con timestamps por palabra, generada en tu GPU. La detección de
+> momentos virales con IA llega en la FASE 4.
 
 ---
 
@@ -41,7 +41,7 @@ docker compose up -d
 # 3. Entorno Python
 cd apps\backend
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,gpu]"
 .\.venv\Scripts\alembic.exe upgrade head
 
 # 4. Frontend
@@ -125,7 +125,8 @@ npm run build
 │  │  │  ├─ db/                 engines, sesiones y modelos ORM
 │  │  │  ├─ api/                app FastAPI, routers, schemas, dependencias
 │  │  │  ├─ repositories/       acceso a datos
-│  │  │  ├─ services/           source/ (URLs), download/ (yt-dlp), video/ (ffprobe)
+│  │  │  ├─ services/           source/ (URLs), download/ (yt-dlp),
+│  │  │  │                      transcribe/ (Whisper), video/ (ffmpeg/ffprobe)
 │  │  │  └─ worker/             Celery: app y tareas
 │  │  └─ tests/
 │  └─ web/                      Next.js 16 + TypeScript strict + Tailwind 4
@@ -155,6 +156,7 @@ pesado (Whisper y FFmpeg).
 | `POST` | `/api/projects` | Crea un proyecto desde una URL y encola su procesamiento |
 | `GET` | `/api/projects` | Lista paginada |
 | `GET` | `/api/projects/{id}` | Detalle, con `progress` para la barra de estado |
+| `GET` | `/api/projects/{id}/transcript` | Transcripción con segmentos (`?include_words=true` añade los tiempos por palabra) |
 | `POST` | `/api/projects/{id}/retry` | Reprocesa un proyecto terminado o fallido |
 | `DELETE` | `/api/projects/{id}` | Borra el proyecto y sus ficheros en disco |
 | `GET` | `/health`, `/health/ready` | Liveness y readiness |
@@ -175,11 +177,17 @@ POST /api/projects
 
 worker
    └─ DOWNLOADING
-   └─ descarga con yt-dlp                (services/download/ytdlp.py)
-   └─ lee metadatos reales con ffprobe   (services/video/probe.py)
-   └─ guarda título, autor, duración, miniatura y ruta del vídeo
+   │    └─ descarga con yt-dlp             (services/download/ytdlp.py)
+   │    └─ metadatos reales con ffprobe    (services/video/probe.py)
+   └─ TRANSCRIBING
+   │    └─ extrae audio WAV 16 kHz mono    (services/video/audio.py)
+   │    └─ faster-whisper sobre CUDA       (services/transcribe/whisper.py)
+   │    └─ guarda Transcript + segmentos con timestamps por palabra
    └─ COMPLETED  (o FAILED con un mensaje legible)
 ```
+
+En un reintento la descarga se salta si el vídeo sigue en disco, y la transcripción
+anterior se borra antes de guardar la nueva: nunca quedan dos.
 
 La descarga se ejecuta **fuera de toda transacción**: puede durar minutos y no debe
 mantener ocupada una conexión de PostgreSQL. El estado se actualiza en transacciones
@@ -211,12 +219,59 @@ como estado terminal alternativo.
 rangos: **el modelo elige segmentos, nunca inventa timestamps**. El backend deriva los tiempos
 exactos a partir de los segmentos reales.
 
-## 9. Almacenamiento
+## 9. Transcripción
+
+Motor: **faster-whisper** (ctranslate2) sobre CUDA. Configurable por entorno:
+
+```
+WHISPER_MODEL=large-v3       # tiny | base | small | medium | large-v3
+WHISPER_DEVICE=cuda          # cuda | cpu | auto
+WHISPER_COMPUTE_TYPE=float16
+WHISPER_WORD_TIMESTAMPS=true
+WHISPER_VAD_FILTER=true
+```
+
+El audio se extrae a **WAV PCM 16 kHz mono**, que es justo la entrada que espera Whisper:
+así el modelo no remuestrea y el fichero sirve tal cual para pasadas futuras.
+
+El modelo se carga **una vez por proceso** y se reutiliza entre tareas. La primera carga
+descarga ~3 GB desde Hugging Face; a partir de ahí tarda unos segundos.
+
+Con `WHISPER_DEVICE=cuda` y sin GPU utilizable, el sistema **falla de forma ruidosa** en
+lugar de caer a CPU: large-v3 en CPU tarda órdenes de magnitud más y conviene enterarse.
+
+### Rendimiento medido (RTX 5080, large-v3, float16)
+
+| | |
+|---|---|
+| Carga del modelo (primera vez, con descarga) | ~106 s |
+| Carga del modelo (posteriores) | ~3 s |
+| Transcripción | **~14x tiempo real** |
+| Ejemplo: vídeo de 9:39 | 39 s, 103 segmentos, 1228 timestamps de palabra |
+
+### Librerías CUDA en Windows
+
+ctranslate2 carga cuBLAS y cuDNN **por nombre**, usando el orden de búsqueda de DLL por
+defecto de Windows: consulta el `PATH`, pero **no** los directorios registrados con
+`os.add_dll_directory`. Como esas librerías se instalan por pip dentro de
+`site-packages/nvidia/*/bin`, sin prepararlas falla con:
+
+```
+RuntimeError: Library cublas64_12.dll is not found or cannot be loaded
+```
+
+`clipforge/core/cuda.py` lo resuelve añadiendo esos directorios al `PATH` del proceso antes
+de cargar el primer modelo. Se llama solo, no hay que hacer nada.
+
+Para una **RTX 50xx (Blackwell, sm_120)** hacen falta cuBLAS 12.8+ y cuDNN 9; el extra
+`gpu` del `pyproject.toml` ya fija esas versiones mínimas.
+
+## 10. Almacenamiento
 
 ```
 storage/projects/{project_id}/
-├─ source/        vídeo original      (KEEP_SOURCE_VIDEO)
-├─ audio/         audio extraído      (KEEP_AUDIO)
+├─ source/        vídeo original      (KEEP_SOURCE_VIDEO, por defecto se conserva)
+├─ audio/         WAV 16 kHz mono     (KEEP_AUDIO, se borra tras transcribir)
 ├─ transcripts/   transcripciones
 ├─ clips/         clips finales       (siempre se conservan)
 ├─ subtitles/     .srt / .ass
@@ -226,7 +281,7 @@ storage/projects/{project_id}/
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 
-## 10. Migraciones
+## 11. Migraciones
 
 ```powershell
 cd apps\backend
@@ -237,11 +292,11 @@ cd apps\backend
 
 Revisa siempre el fichero generado antes de aplicarlo.
 
-## 11. Hoja de ruta
+## 12. Hoja de ruta
 
 - [x] **FASE 1** — infraestructura, API, BD, worker, frontend
 - [x] **FASE 2** — descarga con yt-dlp y creación de proyectos
-- [ ] **FASE 3** — transcripción con faster-whisper sobre CUDA
+- [x] **FASE 3** — transcripción con faster-whisper sobre CUDA
 - [ ] **FASE 4** — análisis de viralidad con LLM
 - [ ] **FASE 5** — recorte y render vertical con FFmpeg/NVENC
 - [ ] **FASE 6** — smart crop con detección de caras

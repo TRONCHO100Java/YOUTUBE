@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query, status
 from clipforge.api.deps import ProjectRepo
 from clipforge.api.schemas.common import Page
 from clipforge.api.schemas.project import ProjectCreate, ProjectDetail, ProjectSummary
+from clipforge.api.schemas.transcript import TranscriptRead, TranscriptSegmentRead
 from clipforge.core.errors import ConflictError, NotFoundError
 from clipforge.core.logging import get_logger
 from clipforge.core.storage import ProjectStorage
@@ -72,6 +73,44 @@ async def list_projects(
 async def get_project(project_id: uuid.UUID, repo: ProjectRepo) -> ProjectDetail:
     project = await _require(project_id, repo)
     return ProjectDetail.from_model(project)
+
+
+@router.get(
+    "/{project_id}/transcript",
+    response_model=TranscriptRead,
+    summary="Transcripcion del proyecto",
+)
+async def get_transcript(
+    project_id: uuid.UUID,
+    repo: ProjectRepo,
+    include_words: bool = Query(
+        False, description="Incluye los timestamps por palabra (respuesta mucho mayor)"
+    ),
+) -> TranscriptRead:
+    await _require(project_id, repo)
+    transcript = await repo.get_transcript(project_id)
+    if transcript is None:
+        raise NotFoundError(f"El proyecto {project_id} todavia no tiene transcripcion")
+
+    return TranscriptRead(
+        id=transcript.id,
+        project_id=transcript.project_id,
+        language=transcript.language,
+        language_probability=transcript.language_probability,
+        model_name=transcript.model_name,
+        duration=transcript.duration,
+        full_text=transcript.full_text,
+        segments=[
+            TranscriptSegmentRead(
+                index=segment.index,
+                start_time=segment.start_time,
+                end_time=segment.end_time,
+                text=segment.text,
+                words=segment.words if include_words else None,
+            )
+            for segment in transcript.segments
+        ],
+    )
 
 
 @router.post(

@@ -11,8 +11,9 @@ from collections.abc import Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from clipforge.db.models import Project
+from clipforge.db.models import Project, Transcript
 
 
 class ProjectRepository:
@@ -35,6 +36,20 @@ class ProjectRepository:
     async def count(self) -> int:
         result = await self.session.execute(select(func.count()).select_from(Project))
         return int(result.scalar_one())
+
+    async def get_transcript(self, project_id: uuid.UUID) -> Transcript | None:
+        """Transcripcion del proyecto con sus segmentos ya cargados.
+
+        `selectinload` evita el N+1 y, sobre todo, evita cargas perezosas
+        sincronas dentro del contexto asincrono.
+        """
+        stmt = (
+            select(Transcript)
+            .where(Transcript.project_id == project_id)
+            .options(selectinload(Transcript.segments))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def delete(self, project: Project) -> None:
         await self.session.delete(project)

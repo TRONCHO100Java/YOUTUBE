@@ -7,7 +7,6 @@ renderizar son los del fichero que tenemos en disco.
 from __future__ import annotations
 
 import json
-import subprocess
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -16,6 +15,7 @@ from typing import Any
 from clipforge.core.config import settings
 from clipforge.core.errors import ExternalToolError
 from clipforge.core.logging import get_logger
+from clipforge.services.video.binaries import run_tool
 
 logger = get_logger(__name__)
 
@@ -42,39 +42,20 @@ def probe_video(path: Path) -> VideoMetadata:
     if not path.is_file():
         raise ExternalToolError(f"No existe el fichero a analizar: {path}")
 
-    # Lista de argumentos, nunca shell=True: `path` no se interpreta como comando.
-    command = [
-        settings.ffprobe_path,
-        "-v",
-        "error",
-        "-print_format",
-        "json",
-        "-show_format",
-        "-show_streams",
-        str(path),
-    ]
-
-    try:
-        # Lista de argumentos y sin shell: nada del usuario se interpreta como comando.
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=PROBE_TIMEOUT_SECONDS,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise ExternalToolError(
-            f"No se encuentra ffprobe en '{settings.ffprobe_path}'. "
-            "Instálalo o define FFPROBE_PATH."
-        ) from exc
-    except subprocess.TimeoutExpired as exc:
-        raise ExternalToolError("ffprobe ha excedido el tiempo máximo") from exc
-
-    if completed.returncode != 0:
-        raise ExternalToolError(
-            "ffprobe ha fallado", details={"stderr": completed.stderr.strip()[:500]}
-        )
+    completed = run_tool(
+        [
+            settings.ffprobe_path,
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            str(path),
+        ],
+        tool_name="ffprobe",
+        timeout=PROBE_TIMEOUT_SECONDS,
+    )
 
     try:
         payload: dict[str, Any] = json.loads(completed.stdout)

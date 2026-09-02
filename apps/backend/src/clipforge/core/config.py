@@ -49,7 +49,10 @@ class Settings(BaseSettings):
 
     # --------------------------------------------------------------- storage
     storage_path: Path = REPO_ROOT / "storage"
-    keep_source_video: bool = False
+    # Conservar el original por defecto: el render de clips lo necesita y
+    # volver a descargarlo es lento y puede fallar (vídeo retirado, límites
+    # de YouTube). En local el disco sale más barato que el ancho de banda.
+    keep_source_video: bool = True
     keep_audio: bool = False
     keep_temp_files: bool = False
 
@@ -88,6 +91,9 @@ class Settings(BaseSettings):
     whisper_beam_size: int = 5
     whisper_language: str | None = None
     whisper_word_timestamps: bool = True
+    # El VAD descarta silencios y música: acelera la transcripción y evita
+    # que el modelo alucine texto en los tramos sin voz.
+    whisper_vad_filter: bool = True
 
     # ------------------------------------------------------------------- ia
     ai_provider: AIProvider = "openai"
