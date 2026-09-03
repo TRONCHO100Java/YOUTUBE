@@ -434,6 +434,44 @@ storage/projects/{project_id}/
 └─ temp/          intermedios         (siempre se borran)
 ```
 
+### Carpeta para subir los clips
+
+Los nombres de arriba son opacos a propósito: estables, independientes de lo que
+devuelva un LLM y sin colisiones. Pero nadie quiere subir `clip_01_9cd4a39e.mp4` a
+TikTok sin saber cuál es. Al terminar el render se deja una segunda vista:
+
+```
+storage/export/{título del vídeo}/
+├─ 01 - El negocio de la muerte - ¿Cuánto vale.mp4
+├─ 01 - El negocio de la muerte - ¿Cuánto vale.srt
+├─ 02 - El mejor currículum es hacer el trabajo antes de ser contratado.mp4
+└─ ...
+```
+
+Ordenados por ranking y con tildes y espacios, que es lo que hace que la carpeta
+sirva de algo. Se quitan solo los caracteres que Windows prohíbe (`<>:"/\|?*`),
+los de control, los puntos y espacios finales —que Windows recorta en silencio— y
+los nombres de dispositivo heredados de MS-DOS (`CON`, `NUL`, `COM1`…), que no se
+pueden usar ni con extensión.
+
+**No ocupa el doble de disco.** Se crean enlaces duros, que son otro nombre para
+los mismos bytes; solo se copia si el sistema de ficheros no los admite (FAT, un
+recurso de red, otro volumen). Exportar 15 clips cuesta 0 bytes.
+
+Es una **vista derivada**: se puede borrar entera sin perder nada y se reconstruye
+en cada render. Un reproceso la vacía antes de rellenarla, para que no queden
+clips viejos haciéndose pasar por buenos. Una carpeta sin la marca
+`.clipforge-project` no se toca nunca, por si `EXPORT_PATH` apunta a un sitio con
+otras cosas dentro.
+
+```
+# EXPORT_PATH=            # por defecto <STORAGE_PATH>/export; admite ruta absoluta
+EXPORT_CLIPS=true         # false desactiva la exportación
+```
+
+Las rutas relativas se anclan a la raíz del repositorio, no al directorio desde el
+que arrancas: uvicorn, celery, pytest y alembic se lanzan desde sitios distintos.
+
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 

@@ -49,6 +49,7 @@ from clipforge.services.ai import (
 from clipforge.services.ai.chunking import to_analysis_segments
 from clipforge.services.download.base import VideoDownloader
 from clipforge.services.download.ytdlp import YtDlpDownloader
+from clipforge.services.export import ClipExport, export_project
 from clipforge.services.source.urls import validate_source_url
 from clipforge.services.subtitles import SourceSegment, build_cues, write_ass, write_srt
 from clipforge.services.transcribe.base import Transcriber, TranscriptionResult
@@ -355,6 +356,49 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
         raise ClipForgeError("No se ha podido renderizar ningún clip")
 
     log.info("pipeline.render_finished", rendered=rendered, failed=len(plans) - rendered)
+    _export_stage(project_id, log)
+
+
+def _export_stage(project_id: uuid.UUID, log: Any) -> None:
+    """Deja una copia de los clips con nombres legibles, para subirlos a mano.
+
+    Nunca tumba el pipeline: los clips ya están renderizados y registrados en
+    base de datos, y esto es solo una vista derivada. Que falle un enlace no
+    puede convertir un proyecto terminado en uno fallido.
+    """
+    if not settings.export_clips:
+        return
+
+    with sync_session_scope() as session:
+        project = _require(session, project_id)
+        title = project.title
+        rows = list(
+            session.execute(
+                select(ClipCandidate, GeneratedClip)
+                .join(GeneratedClip, GeneratedClip.candidate_id == ClipCandidate.id)
+                .where(ClipCandidate.project_id == project_id)
+                .order_by(ClipCandidate.rank)
+            ).all()
+        )
+        clips = [
+            ClipExport(
+                rank=candidate.rank or position,
+                title=candidate.title,
+                video=absolute_from_storage(clip.file_path),
+                subtitles=(
+                    absolute_from_storage(clip.subtitle_path) if clip.subtitle_path else None
+                ),
+            )
+            for position, (candidate, clip) in enumerate(rows, start=1)
+        ]
+
+    try:
+        folder = export_project(project_id, title, clips)
+    except OSError as exc:
+        log.warning("pipeline.export_failed", error=str(exc))
+        return
+    if folder is not None:
+        log.info("pipeline.export_finished", folder=str(folder), clips=len(clips))
 
 
 @dataclass(frozen=True, slots=True)

@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     keep_source_video: bool = True
     keep_audio: bool = False
     keep_temp_files: bool = False
+    # Vista derivada de los clips con nombres legibles, para subirlos a mano.
+    # Se puede apuntar a una carpeta sincronizada con la nube.
+    export_path: Path | None = None
+    export_clips: bool = True
 
     # ---------------------------------------------------------------- fuentes
     allowed_source_hosts: Annotated[list[str], NoDecode] = Field(
@@ -132,6 +136,19 @@ class Settings(BaseSettings):
             return [item.strip() for item in stripped.split(",") if item.strip()]
         return value
 
+    @field_validator("storage_path", "export_path", mode="after")
+    @classmethod
+    def _anchor_to_repo(cls, value: Path | None) -> Path | None:
+        """Ancla las rutas relativas del .env a la raiz del repositorio.
+
+        El backend se arranca desde directorios distintos (uvicorn desde
+        apps/backend, celery, pytest, alembic), asi que resolver contra el cwd
+        haria que "./storage" apuntase a un sitio diferente en cada proceso.
+        """
+        if value is None or value.is_absolute():
+            return value
+        return (REPO_ROOT / value).resolve()
+
     @field_validator("database_url")
     @classmethod
     def _strip_driver(cls, value: str) -> str:
@@ -140,6 +157,12 @@ class Settings(BaseSettings):
             scheme, rest = value.split("://", 1)
             return f"{scheme.split('+', 1)[0]}://{rest}"
         return value
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def export_dir(self) -> Path:
+        """Carpeta de exportacion. Sin EXPORT_PATH, cuelga del storage."""
+        return self.export_path or self.storage_path / "export"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
