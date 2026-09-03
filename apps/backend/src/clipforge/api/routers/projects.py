@@ -6,8 +6,9 @@ import uuid
 
 from fastapi import APIRouter, Query, status
 
-from clipforge.api.deps import ProjectRepo
+from clipforge.api.deps import ClipRepo, ProjectRepo
 from clipforge.api.schemas.candidate import ClipCandidateRead
+from clipforge.api.schemas.clip import GeneratedClipRead
 from clipforge.api.schemas.common import Page
 from clipforge.api.schemas.project import ProjectCreate, ProjectDetail, ProjectSummary
 from clipforge.api.schemas.transcript import TranscriptRead, TranscriptSegmentRead
@@ -125,17 +126,42 @@ async def list_candidates(project_id: uuid.UUID, repo: ProjectRepo) -> list[Clip
     return [ClipCandidateRead.from_model(candidate) for candidate in candidates]
 
 
+@router.get(
+    "/{project_id}/clips",
+    response_model=list[GeneratedClipRead],
+    summary="Clips renderizados del proyecto",
+)
+async def list_clips(
+    project_id: uuid.UUID, repo: ProjectRepo, clips: ClipRepo
+) -> list[GeneratedClipRead]:
+    await _require(project_id, repo)
+    return [GeneratedClipRead.from_model(clip) for clip in await clips.list_for_project(project_id)]
+
+
 @router.post(
     "/{project_id}/retry",
     response_model=ProjectDetail,
     summary="Reprocesar un proyecto terminado",
 )
-async def retry_project(project_id: uuid.UUID, repo: ProjectRepo) -> ProjectDetail:
+async def retry_project(
+    project_id: uuid.UUID,
+    repo: ProjectRepo,
+    force: bool = Query(
+        False,
+        description=(
+            "Reprocesa aunque el proyecto figure en curso. Necesario cuando un "
+            "worker murió a mitad y dejó el estado colgado."
+        ),
+    ),
+) -> ProjectDetail:
     project = await _require(project_id, repo)
 
-    if ProjectStatus(project.status).is_running:
+    # Sin el escape, un worker que muere a mitad deja el proyecto bloqueado
+    # para siempre: figura en curso y nada va a terminarlo.
+    if ProjectStatus(project.status).is_running and not force:
         raise ConflictError(
-            f"El proyecto está en curso ({project.status}); espera a que termine",
+            f"El proyecto está en curso ({project.status}); espera a que termine "
+            "o reintenta con ?force=true si el worker se cayó",
         )
 
     project.status = ProjectStatus.CREATED

@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from clipforge import __version__
-from clipforge.api.routers import health, projects
+from clipforge.api.routers import clips, health, projects
 from clipforge.core.config import settings
 from clipforge.core.errors import ClipForgeError
 from clipforge.core.logging import configure_logging, get_logger
@@ -60,6 +60,17 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # `allow_headers` cubre las cabeceras de PETICIÓN. Estas son de
+        # RESPUESTA y hay que exponerlas explícitamente: sin Content-Range la
+        # etiqueta <video> no puede resolver el tamaño del fichero y se queda
+        # cargando para siempre, y sin Content-Disposition la descarga pierde
+        # el nombre del clip.
+        expose_headers=[
+            "Content-Range",
+            "Accept-Ranges",
+            "Content-Length",
+            "Content-Disposition",
+        ],
     )
 
     _register_middleware(app)
@@ -68,6 +79,7 @@ def create_app() -> FastAPI:
     # /health cuelga de la raiz (convencion de infra); el resto vive bajo /api.
     app.include_router(health.router)
     app.include_router(projects.router, prefix=API_PREFIX)
+    app.include_router(clips.router, prefix=API_PREFIX)
     return app
 
 

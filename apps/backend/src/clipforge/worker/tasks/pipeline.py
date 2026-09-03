@@ -13,11 +13,14 @@ minutos y no debe mantener ocupada una conexión de PostgreSQL.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from clipforge.core.config import settings
 from clipforge.core.errors import ClipForgeError
 from clipforge.core.logging import get_logger
 from clipforge.core.storage import (
@@ -29,6 +32,7 @@ from clipforge.core.storage import (
 from clipforge.db.models import (
     CandidateStatus,
     ClipCandidate,
+    GeneratedClip,
     Project,
     ProjectStatus,
     Transcript,
@@ -46,10 +50,15 @@ from clipforge.services.ai.chunking import to_analysis_segments
 from clipforge.services.download.base import VideoDownloader
 from clipforge.services.download.ytdlp import YtDlpDownloader
 from clipforge.services.source.urls import validate_source_url
+from clipforge.services.subtitles import SourceSegment, build_cues, write_ass, write_srt
 from clipforge.services.transcribe.base import Transcriber, TranscriptionResult
 from clipforge.services.transcribe.whisper import FasterWhisperTranscriber
 from clipforge.services.video.audio import extract_audio
+from clipforge.services.video.crop import CropWindow, center_crop_within
+from clipforge.services.video.encoder import resolve_encoder
+from clipforge.services.video.letterbox import detect_content_window
 from clipforge.services.video.probe import probe_video
+from clipforge.services.video.render import render_vertical_clip
 from clipforge.worker.celery_app import celery_app
 
 logger = get_logger(__name__)
@@ -62,7 +71,7 @@ def process_project(self: Any, project_id: str) -> dict[str, Any]:
     """Procesa un proyecto de principio a fin.
 
     FASE 2: descarga y metadatos. FASE 3: audio y transcripción.
-    FASE 4: detección de los mejores momentos. El render llega en la FASE 5.
+    FASE 4: detección de los mejores momentos. FASE 5: recorte y render 9:16.
     """
     pid = uuid.UUID(project_id)
     log = logger.bind(project_id=project_id, task_id=self.request.id)
@@ -71,6 +80,7 @@ def process_project(self: Any, project_id: str) -> dict[str, Any]:
         _download_stage(pid, log)
         _transcribe_stage(pid, log)
         _analyze_stage(pid, log)
+        _render_stage(pid, log)
     except ClipForgeError as exc:
         # Error esperado (fuente no disponible, ffmpeg, Whisper sin GPU):
         # el mensaje es apto para enseñárselo al usuario.
@@ -82,8 +92,7 @@ def process_project(self: Any, project_id: str) -> dict[str, Any]:
         _update(pid, status=ProjectStatus.FAILED, error_message=f"Error inesperado: {exc}")
         raise
 
-    # FASE 5: encadenar aquí el render de los clips. Mientras el análisis sea la
-    # última etapa implementada, el proyecto se da por terminado al acabarlo.
+    # FASE 6: el smart crop sustituirá el recorte centrado dentro del render.
     _update(pid, status=ProjectStatus.COMPLETED)
     _cleanup(pid, log)
     log.info("pipeline.completed")
@@ -281,6 +290,171 @@ def _save_candidates(project_id: uuid.UUID, suggestions: list[ClipSuggestion]) -
             )
             for position, item in enumerate(suggestions, start=1)
         )
+
+
+# ----------------------------------------------------------------------- render
+def _render_stage(project_id: uuid.UUID, log: Any) -> None:
+    """Recorta cada candidato y lo renderiza en vertical 9:16."""
+    with sync_session_scope() as session:
+        project = _require(session, project_id)
+        if not project.source_video_path:
+            raise ClipForgeError("El proyecto no tiene vídeo de origen que recortar")
+        video_relative = project.source_video_path
+
+        candidates = list(
+            session.execute(
+                select(ClipCandidate)
+                .where(ClipCandidate.project_id == project_id)
+                .where(ClipCandidate.status != CandidateStatus.REJECTED)
+                .order_by(ClipCandidate.rank, ClipCandidate.score.desc())
+            ).scalars()
+        )
+        plans = [
+            _ClipPlan(
+                candidate_id=candidate.id,
+                rank=candidate.rank or position,
+                start=candidate.start_time,
+                end=candidate.end_time,
+            )
+            for position, candidate in enumerate(candidates, start=1)
+        ]
+        segments = _subtitle_segments(session, project_id)
+        project.status = ProjectStatus.GENERATING_CLIPS
+
+    if not plans:
+        raise ClipForgeError("No hay candidatos que renderizar")
+
+    source = absolute_from_storage(video_relative)
+    storage = ProjectStorage(project_id)
+    # Ambas cosas se calculan una vez por proyecto: la comprobación de NVENC
+    # cuesta cerca de un segundo y la detección de letterbox analiza fotogramas.
+    encoder = resolve_encoder()
+    probed = probe_video(source)
+    content = detect_content_window(source, probed.width, probed.height, start=plans[0].start)
+    crop = center_crop_within(content, settings.output_width, settings.output_height)
+    log.info(
+        "pipeline.render_started",
+        clips=len(plans),
+        encoder=encoder.name,
+        crop=crop.to_filter(),
+    )
+
+    rendered = 0
+    for plan in plans:
+        try:
+            _render_one(plan, source, storage, segments, encoder, crop, log)
+            rendered += 1
+        except ClipForgeError as exc:
+            # El fallo de un clip no debe tirar los demás: se marca y se sigue.
+            log.warning("pipeline.clip_failed", rank=plan.rank, error=exc.message)
+            _update_candidate(
+                plan.candidate_id, status=CandidateStatus.FAILED, error_message=exc.message
+            )
+
+    if rendered == 0:
+        raise ClipForgeError("No se ha podido renderizar ningún clip")
+
+    log.info("pipeline.render_finished", rendered=rendered, failed=len(plans) - rendered)
+
+
+@dataclass(frozen=True, slots=True)
+class _ClipPlan:
+    """Lo que hace falta para renderizar un clip, sin la sesión de BD abierta."""
+
+    candidate_id: uuid.UUID
+    rank: int
+    start: float
+    end: float
+
+
+def _render_one(
+    plan: _ClipPlan,
+    source: Path,
+    storage: ProjectStorage,
+    segments: list[SourceSegment],
+    encoder: Any,
+    crop: CropWindow,
+    log: Any,
+) -> None:
+    """Genera el .srt y el .mp4 de un candidato, y los registra."""
+    _update_candidate(plan.candidate_id, status=CandidateStatus.RENDERING, error_message=None)
+
+    stem = f"clip_{plan.rank:02d}_{plan.candidate_id.hex[:8]}"
+    cues = build_cues(segments, plan.start, plan.end)
+
+    # Dos ficheros con el mismo contenido y distinto propósito: el .srt es el
+    # que se entrega para publicar el clip, el .ass es el que se incrusta.
+    subtitle_path = (
+        write_srt(cues, storage.path_for(StorageArea.SUBTITLES, f"{stem}.srt")) if cues else None
+    )
+    burn_path = (
+        write_ass(
+            cues,
+            storage.path_for(StorageArea.TEMP, f"{stem}.ass"),
+            settings.output_width,
+            settings.output_height,
+        )
+        if cues
+        else None
+    )
+
+    result = render_vertical_clip(
+        source,
+        storage.path_for(StorageArea.CLIPS, f"{stem}.mp4"),
+        start=plan.start,
+        end=plan.end,
+        # BURN_SUBTITLES a false deja el .srt en disco pero no lo quema, para
+        # poder publicar el clip limpio y subir los subtítulos aparte.
+        subtitles=burn_path if settings.burn_subtitles else None,
+        crop=crop,
+        encoder=encoder,
+    )
+    storage.assert_within_root(result.path)
+
+    with sync_session_scope() as session:
+        session.execute(
+            delete(GeneratedClip).where(GeneratedClip.candidate_id == plan.candidate_id)
+        )
+        session.flush()
+        session.add(
+            GeneratedClip(
+                candidate_id=plan.candidate_id,
+                file_path=relative_to_storage(result.path),
+                subtitle_path=relative_to_storage(subtitle_path) if subtitle_path else None,
+                duration=result.duration,
+                width=result.width,
+                height=result.height,
+                filesize_bytes=result.filesize_bytes,
+                has_burned_subtitles=result.has_burned_subtitles,
+                encoder=result.encoder,
+            )
+        )
+        candidate = session.get(ClipCandidate, plan.candidate_id)
+        if candidate is not None:
+            candidate.status = CandidateStatus.RENDERED
+            candidate.error_message = None
+
+    log.info("pipeline.clip_rendered", rank=plan.rank, subtitles=len(cues))
+
+
+def _subtitle_segments(session: Session, project_id: uuid.UUID) -> list[SourceSegment]:
+    """Segmentos de la transcripción en tiempos del vídeo original."""
+    rows = session.execute(
+        select(TranscriptSegment)
+        .join(Transcript, Transcript.id == TranscriptSegment.transcript_id)
+        .where(Transcript.project_id == project_id)
+        .order_by(TranscriptSegment.index)
+    ).scalars()
+    return [SourceSegment(start=row.start_time, end=row.end_time, text=row.text) for row in rows]
+
+
+def _update_candidate(candidate_id: uuid.UUID, **fields: Any) -> None:
+    with sync_session_scope() as session:
+        candidate = session.get(ClipCandidate, candidate_id)
+        if candidate is None:
+            return
+        for key, value in fields.items():
+            setattr(candidate, key, value)
 
 
 # ----------------------------------------------------------------------- comunes

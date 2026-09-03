@@ -54,12 +54,20 @@ def ffmpeg_directory() -> str | None:
 
 
 def run_tool(
-    command: list[str], *, tool_name: str, timeout: int
+    command: list[str],
+    *,
+    tool_name: str,
+    timeout: int,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Ejecuta una herramienta externa y normaliza sus fallos.
+    r"""Ejecuta una herramienta externa y normaliza sus fallos.
 
     Siempre con lista de argumentos y sin `shell`: ningún dato del usuario puede
     interpretarse como comando.
+
+    `cwd` permite pasarle rutas relativas a ffmpeg. Hace falta para el filtro
+    `subtitles`, cuyo parser trata `:` y `\` como sintaxis propia y se atraganta
+    con una ruta absoluta de Windows.
     """
     try:
         completed = subprocess.run(
@@ -70,6 +78,7 @@ def run_tool(
             errors="replace",
             timeout=timeout,
             check=False,
+            cwd=str(cwd) if cwd else None,
         )
     except FileNotFoundError as exc:
         raise ExternalToolError(

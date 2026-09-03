@@ -1,6 +1,7 @@
 import { API_BASE_URL } from "@/lib/config";
 import type {
   ClipCandidate,
+  GeneratedClip,
   Page,
   ProjectDetail,
   ProjectSummary,
@@ -81,6 +82,21 @@ export function retryProject(id: string): Promise<ProjectDetail> {
 /** Momentos detectados por la IA, del mejor al peor. */
 export function listCandidates(projectId: string): Promise<ClipCandidate[]> {
   return apiFetch<ClipCandidate[]>(`/api/projects/${projectId}/candidates`);
+}
+
+/** Clips ya renderizados, del mejor al peor. */
+export function listClips(projectId: string): Promise<GeneratedClip[]> {
+  return apiFetch<GeneratedClip[]>(`/api/projects/${projectId}/clips`);
+}
+
+/** URL del MP4. El navegador la pide directamente, sin pasar por apiFetch. */
+export function clipVideoUrl(clipId: string): string {
+  return `${API_BASE_URL}/api/clips/${clipId}/video`;
+}
+
+/** URL del .srt suelto, para publicar el clip con subtítulos aparte. */
+export function clipSubtitlesUrl(clipId: string): string {
+  return `${API_BASE_URL}/api/clips/${clipId}/subtitles`;
 }
 
 export function listProjects(limit = 20, offset = 0): Promise<Page<ProjectSummary>> {

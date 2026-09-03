@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { listCandidates } from "@/lib/api";
 import { SCORE_LABELS, type ClipCandidate } from "@/lib/types";
@@ -21,7 +21,12 @@ function scoreTone(score: number): string {
   return "text-zinc-400";
 }
 
-export function CandidateList({ projectId }: { projectId: string }) {
+interface Props {
+  projectId: string;
+  emptyAction?: ReactNode;
+}
+
+export function CandidateList({ projectId, emptyAction }: Props) {
   const [candidates, setCandidates] = useState<ClipCandidate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,7 +38,9 @@ export function CandidateList({ projectId }: { projectId: string }) {
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : "Error desconocido");
+          setError(
+            cause instanceof Error ? cause.message : "Error desconocido",
+          );
         }
       });
     return () => {
@@ -46,57 +53,87 @@ export function CandidateList({ projectId }: { projectId: string }) {
   }
 
   if (candidates === null) {
-    return <p className="px-4 pb-4 text-sm text-zinc-500">Cargando momentos…</p>;
+    return (
+      <p className="px-4 pb-4 text-sm text-zinc-500">Cargando momentos…</p>
+    );
   }
 
   if (candidates.length === 0) {
     return (
-      <p className="px-4 pb-4 text-sm text-zinc-500">
-        Este proyecto todavía no tiene momentos detectados.
-      </p>
+      <div className="flex flex-wrap items-center gap-3 px-4 pb-4">
+        <p className="text-sm text-zinc-500">
+          Este proyecto no tiene momentos detectados. Si se procesó con una
+          versión anterior, vuelve a lanzarlo para transcribirlo, analizarlo y
+          generar los clips.
+        </p>
+        {emptyAction}
+      </div>
     );
   }
 
+  // Candidatos sin clips: analizado antes de que existiera el render.
   return (
-    <ol className="space-y-2 px-3 pb-3">
-      {candidates.map((candidate, index) => (
-        <li key={candidate.id} className="rounded-lg border border-white/5 bg-black/20 p-3">
-          <div className="flex items-baseline gap-3">
-            <span className="text-xs text-zinc-600">#{candidate.rank ?? index + 1}</span>
-            <span className={`text-lg font-semibold tabular-nums ${scoreTone(candidate.score)}`}>
-              {Math.round(candidate.score)}
-              <span className="text-xs font-normal text-zinc-600">/100</span>
-            </span>
-            <p className="min-w-0 flex-1 truncate text-sm text-zinc-100">{candidate.title}</p>
-            <span className="shrink-0 text-xs tabular-nums text-zinc-500">
-              {formatRange(candidate.start_time, candidate.end_time)} ·{" "}
-              {Math.round(candidate.duration)}s
-            </span>
-          </div>
+    <>
+      {emptyAction && (
+        <div className="flex flex-wrap items-center gap-3 px-4 pb-3">
+          <p className="text-sm text-zinc-500">
+            Estos momentos se detectaron, pero aún no se han renderizado como
+            clips.
+          </p>
+          {emptyAction}
+        </div>
+      )}
+      <ol className="space-y-2 px-3 pb-3">
+        {candidates.map((candidate, index) => (
+          <li
+            key={candidate.id}
+            className="rounded-lg border border-white/5 bg-black/20 p-3"
+          >
+            <div className="flex items-baseline gap-3">
+              <span className="text-xs text-zinc-600">
+                #{candidate.rank ?? index + 1}
+              </span>
+              <span
+                className={`text-lg font-semibold tabular-nums ${scoreTone(candidate.score)}`}
+              >
+                {Math.round(candidate.score)}
+                <span className="text-xs font-normal text-zinc-600">/100</span>
+              </span>
+              <p className="min-w-0 flex-1 truncate text-sm text-zinc-100">
+                {candidate.title}
+              </p>
+              <span className="shrink-0 text-xs tabular-nums text-zinc-500">
+                {formatRange(candidate.start_time, candidate.end_time)} ·{" "}
+                {Math.round(candidate.duration)}s
+              </span>
+            </div>
 
-          {candidate.hook && (
-            <p className="mt-2 border-l-2 border-emerald-500/40 pl-3 text-sm italic text-zinc-300">
-              {candidate.hook}
-            </p>
-          )}
+            {candidate.hook && (
+              <p className="mt-2 border-l-2 border-emerald-500/40 pl-3 text-sm italic text-zinc-300">
+                {candidate.hook}
+              </p>
+            )}
 
-          {candidate.reason && (
-            <p className="mt-2 text-xs leading-relaxed text-zinc-500">{candidate.reason}</p>
-          )}
+            {candidate.reason && (
+              <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                {candidate.reason}
+              </p>
+            )}
 
-          <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-            {SCORE_LABELS.map(([key, label, max]) => (
-              <div key={key} className="flex items-baseline gap-1">
-                <dt className="text-[11px] text-zinc-600">{label}</dt>
-                <dd className="text-[11px] tabular-nums text-zinc-400">
-                  {candidate.scores[key] ?? "—"}
-                  <span className="text-zinc-700">/{max}</span>
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </li>
-      ))}
-    </ol>
+            <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+              {SCORE_LABELS.map(([key, label, max]) => (
+                <div key={key} className="flex items-baseline gap-1">
+                  <dt className="text-[11px] text-zinc-600">{label}</dt>
+                  <dd className="text-[11px] tabular-nums text-zinc-400">
+                    {candidate.scores[key] ?? "—"}
+                    <span className="text-zinc-700">/{max}</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }

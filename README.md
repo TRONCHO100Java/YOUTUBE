@@ -3,9 +3,9 @@
 Convierte vídeos largos en clips verticales 9:16 listos para publicar: descarga, transcribe,
 detecta los mejores momentos con IA, recorta y renderiza con aceleración NVIDIA.
 
-> **Estado actual: FASE 4 completada** — pegas una URL de YouTube y obtienes los mejores
-> momentos del vídeo, puntuados sobre 100 y con sus timestamps exactos. El recorte y
-> render en 9:16 llega en la FASE 5.
+> **Estado actual: FASE 5 completada** — pegas una URL de YouTube y obtienes clips
+> verticales 1080x1920 ya renderizados, con subtítulos incrustados y acelerados por la
+> GPU, reproducibles y descargables desde el navegador.
 
 ---
 
@@ -128,7 +128,8 @@ npm run build
 │  │  │  ├─ repositories/       acceso a datos
 │  │  │  ├─ services/           source/ (URLs), download/ (yt-dlp),
 │  │  │  │                      transcribe/ (Whisper), ai/ (LLM),
-│  │  │  │                      video/ (ffmpeg/ffprobe)
+│  │  │  │                      video/ (ffmpeg: encoder, crop, letterbox, render),
+│  │  │  │                      subtitles/ (.srt y .ass)
 │  │  │  └─ worker/             Celery: app y tareas
 │  │  └─ tests/
 │  └─ web/                      Next.js 16 + TypeScript strict + Tailwind 4
@@ -162,7 +163,15 @@ pesado (Whisper y FFmpeg).
 | `GET` | `/api/projects/{id}/candidates` | Momentos detectados, con su desglose de puntuación |
 | `POST` | `/api/projects/{id}/retry` | Reprocesa un proyecto terminado o fallido |
 | `DELETE` | `/api/projects/{id}` | Borra el proyecto y sus ficheros en disco |
+| `GET` | `/api/projects/{id}/clips` | Clips renderizados, con resolución, peso y encoder usado |
+| `GET` | `/api/clips/{id}` | Detalle de un clip |
+| `GET` | `/api/clips/{id}/video` | El MP4. Admite `Range`, así que el `<video>` puede buscar sin descargarlo entero |
+| `GET` | `/api/clips/{id}/subtitles` | El `.srt` como fichero aparte |
 | `GET` | `/health`, `/health/ready` | Liveness y readiness |
+
+El navegador solo ve las cabeceras de respuesta que CORS le expone explícitamente. Sin
+`Content-Range` en `expose_headers` la etiqueta `<video>` no puede resolver el tamaño del
+recurso y se queda cargando para siempre, aunque el servidor responda un 206 correcto.
 
 Todos los errores comparten la misma forma:
 
@@ -191,11 +200,20 @@ worker
    │    └─ un LLM propone momentos por ventana
    │    └─ valida, deduplica y rankea      (services/ai/resolver.py, ranking.py)
    │    └─ guarda los ClipCandidate puntuados
+   └─ GENERATING_CLIPS
+   │    └─ resuelve el encoder una vez        (services/video/encoder.py)
+   │    └─ detecta el letterbox del original  (services/video/letterbox.py)
+   │    └─ por cada candidato: .srt + .ass    (services/subtitles/)
+   │    └─ corta, recorta, escala y codifica  (services/video/render.py)
+   │    └─ guarda los GeneratedClip
    └─ COMPLETED  (o FAILED con un mensaje legible)
 ```
 
 En un reintento la descarga se salta si el vídeo sigue en disco, y la transcripción
 anterior se borra antes de guardar la nueva: nunca quedan dos.
+
+Que falle el render de un clip no tumba la fase entera: se registra el fallo y se sigue con
+el resto. Perder uno de cinco clips es mejor que perder los cinco.
 
 La descarga se ejecuta **fuera de toda transacción**: puede durar minutos y no debe
 mantener ocupada una conexión de PostgreSQL. El estado se actualiza en transacciones
@@ -344,7 +362,67 @@ tener Ollama corriendo y el modelo descargado (`ollama pull qwen2.5:14b`). Como 
 el cliente reintenta hasta `AI_MAX_RETRIES` veces; los SDK de OpenAI y Anthropic ya
 reintentan por su cuenta.
 
-## 11. Almacenamiento
+## 11. Render vertical y subtítulos
+
+Un solo paso de ffmpeg por clip: buscar, recortar, escalar, quemar subtítulos y codificar.
+Cortar a un fichero intermedio y recodificarlo después costaría el doble de tiempo y una
+generación más de pérdida de calidad.
+
+```
+-ss {inicio} -t {duracion} -i original.mp4
+  -vf crop=...,scale=1080:1920:flags=lanczos,setsar=1,ass=clip.ass
+  -c:v h264_nvenc -preset p5 -tune hq -rc vbr ...
+  -c:a aac -b:a 192k -movflags +faststart
+```
+
+`-ss` va **antes** de `-i` para que ffmpeg busque por el índice del contenedor en vez de
+decodificar desde el principio; como después se recodifica, el corte sigue siendo exacto al
+fotograma. `-movflags +faststart` mueve el índice al principio del MP4: sin él el navegador
+tiene que descargar el fichero entero antes de empezar a reproducir.
+
+### Encoder
+
+```
+VIDEO_ENCODER=auto           # auto | h264_nvenc | libx264
+```
+
+`auto` **comprueba** NVENC en vez de suponerlo: codifica dos fotogramas de prueba a `-f null`
+y solo lo usa si funcionan. Que ffmpeg liste `h264_nvenc` no garantiza que haya driver, GPU
+libre o sesiones de codificación disponibles. Si pides `h264_nvenc` explícitamente y no
+sirve, falla en vez de caer en silencio a CPU: pediste GPU por algo.
+
+Medido en una RTX 5080: 5 clips de ~40 s renderizados en 19 s.
+
+### Encuadre
+
+Muchos vídeos traen barras negras **quemadas en la imagen**. Sin detectarlas, el clip
+vertical las hereda y se come una cuarta parte del marco. `letterbox.py` muestrea 120
+fotogramas con `cropdetect`, se queda con la propuesta más repetida y la descarta si sugiere
+recortar más de la mitad del área — ante la duda, no recortar. El recorte 9:16 se calcula
+después *dentro* de esa ventana de contenido.
+
+El encuadre es de momento un centrado. La FASE 6 sustituirá el cálculo por una ventana
+guiada por la cara detectada; el resto de la cadena no cambia, porque `render_vertical_clip`
+ya recibe la ventana como parámetro.
+
+### Subtítulos
+
+Se generan dos ficheros por clip: un `.srt` como sidecar descargable y un `.ass` que es el
+que se incrusta. Los tiempos salen de los `TranscriptSegment` recortados a la ventana del
+clip y desplazados a cero; los segmentos largos se parten en varias cues proporcionales al
+tiempo, porque un segmento de Whisper de 12 segundos metido en dos líneas tapa media pantalla.
+
+El `.ass` no es un capricho de formato. Un `.srt` solo puede estilarse con `force_style`, y
+ahí libass interpreta los tamaños y márgenes sobre un lienzo de 384x288 en lugar de sobre el
+vídeo real: `MarginV=380` se sale de la pantalla y el subtítulo simplemente no aparece.
+`original_size` **no** arregla esto. Un `.ass` declara su propia `PlayResX/PlayResY`, así que
+cada valor del estilo es un píxel del clip final.
+
+```
+BURN_SUBTITLES=true          # false deja el clip limpio; el .srt se genera igual
+```
+
+## 12. Almacenamiento
 
 ```
 storage/projects/{project_id}/
@@ -359,7 +437,7 @@ storage/projects/{project_id}/
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 
-## 12. Migraciones
+## 13. Migraciones
 
 ```powershell
 cd apps\backend
@@ -370,12 +448,12 @@ cd apps\backend
 
 Revisa siempre el fichero generado antes de aplicarlo.
 
-## 13. Hoja de ruta
+## 14. Hoja de ruta
 
 - [x] **FASE 1** — infraestructura, API, BD, worker, frontend
 - [x] **FASE 2** — descarga con yt-dlp y creación de proyectos
 - [x] **FASE 3** — transcripción con faster-whisper sobre CUDA
 - [x] **FASE 4** — análisis de viralidad con LLM
-- [ ] **FASE 5** — recorte y render vertical con FFmpeg/NVENC
+- [x] **FASE 5** — recorte y render vertical con FFmpeg/NVENC
 - [ ] **FASE 6** — smart crop con detección de caras
 - [ ] **FASE 7** — frontend completo con progreso y descarga

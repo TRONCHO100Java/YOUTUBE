@@ -67,6 +67,26 @@ export interface ClipCandidate {
   scores: ClipScoreBreakdown;
 }
 
+export interface GeneratedClip {
+  id: string;
+  candidate_id: string;
+  project_id: string;
+  title: string;
+  hook: string | null;
+  reason: string | null;
+  score: number;
+  rank: number | null;
+  start_time: number;
+  end_time: number;
+  duration: number | null;
+  width: number | null;
+  height: number | null;
+  filesize_bytes: number | null;
+  has_burned_subtitles: boolean;
+  has_subtitle_file: boolean;
+  encoder: string | null;
+}
+
 export interface Page<T> {
   items: T[];
   total: number;

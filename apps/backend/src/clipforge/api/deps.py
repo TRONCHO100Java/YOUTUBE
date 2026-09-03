@@ -8,6 +8,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from clipforge.db.session import get_async_session
+from clipforge.repositories.clip_repository import ClipRepository
 from clipforge.repositories.project_repository import ProjectRepository
 
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]
@@ -18,3 +19,10 @@ def get_project_repository(session: DbSession) -> ProjectRepository:
 
 
 ProjectRepo = Annotated[ProjectRepository, Depends(get_project_repository)]
+
+
+def get_clip_repository(session: DbSession) -> ClipRepository:
+    return ClipRepository(session)
+
+
+ClipRepo = Annotated[ClipRepository, Depends(get_clip_repository)]
