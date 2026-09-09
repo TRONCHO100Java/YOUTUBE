@@ -53,6 +53,33 @@ def ffmpeg_directory() -> str | None:
     return str(binary.parent) if binary else None
 
 
+def run_tool_binary(command: list[str], *, tool_name: str, timeout: int) -> bytes:
+    """Ejecuta una herramienta que escribe BINARIO por su salida estándar.
+
+    Hace falta para leer fotogramas crudos de ffmpeg: `run_tool` decodifica la
+    salida como texto UTF-8, y sobre un flujo de píxeles eso corrompe los datos
+    en silencio en lugar de fallar.
+    """
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise ExternalToolError(f"No se encuentra {tool_name} en '{command[0]}'") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ExternalToolError(f"{tool_name} ha excedido el tiempo máximo ({timeout}s)") from exc
+
+    if completed.returncode != 0:
+        raise ExternalToolError(
+            f"{tool_name} ha fallado",
+            details={"stderr": (completed.stderr or b"").decode("utf-8", "replace")[-800:]},
+        )
+    return completed.stdout
+
+
 def run_tool(
     command: list[str],
     *,

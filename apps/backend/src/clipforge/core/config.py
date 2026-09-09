@@ -93,6 +93,27 @@ class Settings(BaseSettings):
     output_width: int = 1080
     output_height: int = 1920
 
+    # ------------------------------------------------------------- encuadre
+    #: Coloca la ventana vertical sobre el sujeto en lugar de centrarla. En un
+    #: plano general con dos personas, centrar deja a una fuera del clip.
+    smart_crop: bool = True
+    #: Ancho al que se analizan los fotogramas para detectar caras.
+    smart_crop_analysis_width: int = 480
+    #: Fotogramas por segundo que se muestrean de cada clip.
+    smart_crop_sample_fps: float = 2.0
+    #: Tope de muestras por clip, para que un clip largo no dispare el coste.
+    smart_crop_max_samples: int = 90
+    #: Ventana de la media móvil que suaviza el seguimiento.
+    smart_crop_smoothing: int = 5
+    #: Paneo. Desactivado por defecto: un seguimiento con temblor marea más de
+    #: lo que aporta, y una ventana fija bien colocada ya arregla el problema.
+    smart_crop_pan: bool = False
+    #: Fracción del ancho de la ventana que el sujeto debe recorrer para que
+    #: valga la pena panear en lugar de dejarla fija.
+    smart_crop_pan_ratio: float = 0.6
+    #: Tope de tramos de la expresión de paneo: se evalúa en cada fotograma.
+    smart_crop_max_keyframes: int = 12
+
     # ------------------------------------------------------------- whisper
     whisper_model: str = "large-v3"
     whisper_device: Literal["cuda", "cpu", "auto"] = "cuda"

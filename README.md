@@ -130,7 +130,7 @@ npm run build
 │  │  │  │                      transcribe/ (Whisper), ai/ (LLM y visión),
 │  │  │  │                      signals/ (volumen, cortes de plano, movimiento),
 │  │  │  │                      video/ (ffmpeg: encoder, crop, letterbox,
-│  │  │  │                      fotogramas, render), subtitles/ (.srt y .ass),
+│  │  │  │                      framing, fotogramas, render), subtitles/,
 │  │  │  │                      render_clip.py (render de un clip suelto)
 │  │  │  └─ worker/             Celery: app y tareas
 │  │  └─ tests/
@@ -410,9 +410,37 @@ fotogramas con `cropdetect`, se queda con la propuesta más repetida y la descar
 recortar más de la mitad del área — ante la duda, no recortar. El recorte 9:16 se calcula
 después *dentro* de esa ventana de contenido.
 
-El encuadre es de momento un centrado. La FASE 13 sustituirá el cálculo por una ventana
-guiada por la cara detectada; el resto de la cadena no cambia, porque `render_vertical_clip`
-ya recibe la ventana como parámetro.
+Dentro de esa ventana, dónde cae el recorte 9:16 lo decide `framing.py` **por clip**, no
+por proyecto: el sujeto está en un sitio distinto en cada momento del vídeo.
+
+La pregunta que se responde no es *dónde está el punto medio del sujeto* sino **qué franja
+vertical concentra más de lo que importa**. La diferencia no es sutil: con dos personas en
+los extremos del plano, el punto medio cae entre las dos y la ventana no coge a ninguna.
+
+Se construye un perfil de importancia por columnas, sumando:
+
+| Señal | Peso | Cuándo manda |
+|---|---:|---|
+| Caras (Haar frontal + perfil) | 4 | Contenido hablado; si hay cara reconocible, gana |
+| Movimiento entre fotogramas | 1 | Planos generales, gente de espaldas, cámara lejos |
+
+Sobre ese perfil, una suma deslizante resuelta con la suma acumulada encuentra la posición
+con más peso. Si el perfil sale plano —menos de un 8 % de diferencia entre la mejor franja y
+la peor— se centra: inventarse una decisión sería peor que no tomarla.
+
+El análisis cuesta unos **2 segundos por clip**: fotogramas en gris a 480 px, dos por
+segundo, sacados de ffmpeg por una tubería. Medido sobre material real:
+
+```
+podcast, plano de un invitado descentrado    x 656 → 896   (+240 px, 80/80 caras)
+comedia, plano general con acción a un lado  x 656 → 300   (−356 px, sin caras)
+podcast, plano ya centrado                   x 656 → 644   (−12 px)
+```
+
+Con `SMART_CROP_PAN=true` la ventana además **sigue** al sujeto: se interpolan hasta doce
+keyframes en una expresión del filtro `crop` de ffmpeg, que la evalúa en cada fotograma. Va
+desactivado por defecto porque una cámara que se mueve sola no le sienta bien a todo el
+material, no porque no funcione.
 
 ### Subtítulos
 
@@ -582,4 +610,4 @@ Revisa siempre el fichero generado antes de aplicarlo.
 - [x] **FASE 10** — Whisper con traducción y guarda contra alucinaciones
 - [x] **FASE 11** — candidatos manuales y render de un clip suelto
 - [x] **FASE 12** — editor con línea de tiempo de señales
-- [ ] **FASE 13** — smart crop con detección de caras
+- [x] **FASE 13** — encuadre inteligente por caras y movimiento

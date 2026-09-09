@@ -23,6 +23,7 @@ from clipforge.core.storage import ProjectStorage, StorageArea
 from clipforge.services.subtitles import SourceSegment, build_cues, write_ass, write_srt
 from clipforge.services.video.crop import CropWindow, center_crop_within
 from clipforge.services.video.encoder import EncoderProfile, resolve_encoder
+from clipforge.services.video.framing import CropPlan, build_track, plan_crop
 from clipforge.services.video.letterbox import detect_content_window
 from clipforge.services.video.probe import probe_video
 from clipforge.services.video.render import render_vertical_clip
@@ -55,13 +56,21 @@ class RenderSetup:
     La comprobación de NVENC cuesta cerca de un segundo y la detección de
     letterbox analiza fotogramas: hacerlo por clip multiplicaría el tiempo de
     render sin cambiar el resultado.
+
+    El **encuadre no está aquí a propósito**: depende de dónde esté el sujeto, y
+    eso cambia de un clip a otro. Lo que se comparte es `content`, la zona del
+    fotograma que tiene imagen de verdad, sin las barras negras incrustadas.
     """
 
     source: Path
     storage: ProjectStorage
     segments: list[SourceSegment]
     encoder: EncoderProfile
-    crop: CropWindow
+    #: Región con imagen real del original, ya sin letterbox.
+    content: CropWindow
+    #: Dimensiones del original, para traducir coordenadas del análisis.
+    source_width: int
+    source_height: int
     burn_subtitles: bool
 
 
@@ -99,13 +108,13 @@ def build_setup(
     encoder = resolve_encoder()
     probed = probe_video(source)
     content = detect_content_window(source, probed.width, probed.height, start=sample_at)
-    crop = center_crop_within(content, settings.output_width, settings.output_height)
 
     logger.info(
         "render.setup_ready",
         encoder=encoder.name,
         source=f"{probed.width}x{probed.height}",
-        crop=crop.to_filter(),
+        content=content.to_filter(),
+        smart_crop=settings.smart_crop,
         burn_subtitles=burn_subtitles,
     )
     return RenderSetup(
@@ -113,8 +122,37 @@ def build_setup(
         storage=ProjectStorage(project_id),
         segments=segments,
         encoder=encoder,
-        crop=crop,
+        content=content,
+        source_width=probed.width,
+        source_height=probed.height,
         burn_subtitles=burn_subtitles,
+    )
+
+
+def plan_framing(plan: ClipRenderPlan, setup: RenderSetup) -> CropPlan:
+    """Decide dónde cae la ventana vertical de ESTE clip.
+
+    Con `SMART_CROP` desactivado se centra, que es lo que se hacía antes de la
+    FASE 13. Con él activado se sigue al sujeto: primero por sus caras y, si no
+    hay ninguna reconocible, por dónde está el movimiento.
+    """
+    centered = center_crop_within(setup.content, settings.output_width, settings.output_height)
+    if not settings.smart_crop:
+        return CropPlan(window=centered)
+
+    track = build_track(
+        setup.source,
+        start=plan.start,
+        end=plan.end,
+        source_width=setup.source_width,
+        source_height=setup.source_height,
+        window_width=centered.width,
+    )
+    return plan_crop(
+        track,
+        setup.content,
+        target_width=settings.output_width,
+        target_height=settings.output_height,
     )
 
 
@@ -124,6 +162,7 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
     Raises:
         ExternalToolError: si el rango es inválido o ffmpeg falla.
     """
+    framing = plan_framing(plan, setup)
     cues = build_cues(setup.segments, plan.start, plan.end)
 
     # Dos ficheros con el mismo contenido y distinto propósito: el .srt es el
@@ -152,7 +191,7 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         # Sin subtítulos quemados el .srt sigue quedando en disco, para poder
         # publicar el clip limpio y subirlos aparte.
         subtitles=burn_path,
-        crop=setup.crop,
+        crop=framing,
         encoder=setup.encoder,
     )
     setup.storage.assert_within_root(result.path)

@@ -21,6 +21,11 @@ dependencies = [
     "httpx>=0.28",
     "openai>=1.60",
     "anthropic>=0.40",
+    # Encuadre inteligente: solo se usa el detector de caras Haar, que viene
+    # dentro del propio wheel. La 5.x dejo de incluir las cascadas, asi que
+    # subir de version obligaria a descargar los modelos aparte.
+    "opencv-python-headless>=4.10,<5",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]

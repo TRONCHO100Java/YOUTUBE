@@ -1,16 +1,26 @@
 """Geometría del recorte vertical.
 
-FASE 5: recorte centrado, que es el comportamiento razonable por defecto.
-La FASE 6 sustituirá `center_crop` por una versión que sitúe la ventana sobre
-la cara detectada; el resto del render no tendrá que cambiar, porque solo
-consume una `CropWindow`.
+El centrado es el comportamiento por defecto y el respaldo de todo lo demás.
+Dónde colocar la ventana cuando hay un sujeto que seguir lo decide
+`framing.py`, que produce un plan compatible con lo que espera el render.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from clipforge.core.errors import ExternalToolError
+
+
+class CropFilter(Protocol):
+    """Cualquier cosa capaz de describirse como un filtro `crop` de ffmpeg.
+
+    Existe para que el render acepte tanto una ventana fija como el plan con
+    paneo de la FASE 13 sin tener que saber cuál de las dos ha recibido.
+    """
+
+    def to_filter(self) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)

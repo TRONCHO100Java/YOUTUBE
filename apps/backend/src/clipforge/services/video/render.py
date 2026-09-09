@@ -14,7 +14,7 @@ from clipforge.core.config import settings
 from clipforge.core.errors import ExternalToolError
 from clipforge.core.logging import get_logger
 from clipforge.services.video.binaries import run_tool
-from clipforge.services.video.crop import CropWindow, center_crop
+from clipforge.services.video.crop import CropFilter, center_crop
 from clipforge.services.video.encoder import EncoderProfile, resolve_encoder
 from clipforge.services.video.probe import probe_video
 
@@ -44,15 +44,14 @@ def render_vertical_clip(
     start: float,
     end: float,
     subtitles: Path | None = None,
-    crop: CropWindow | None = None,
+    crop: CropFilter | None = None,
     encoder: EncoderProfile | None = None,
 ) -> RenderResult:
     """Extrae `[start, end)` del original y lo deja en vertical 9:16.
 
     Args:
         subtitles: `.ass` a quemar. Si es None, el clip sale sin subtítulos.
-        crop: ventana de recorte. Si es None, se centra (la FASE 6 pasará aquí
-            la ventana calculada sobre la cara detectada).
+        crop: ventana o plan de recorte. Si es None, se centra.
 
     Raises:
         ExternalToolError: si el rango es inválido o ffmpeg falla.
