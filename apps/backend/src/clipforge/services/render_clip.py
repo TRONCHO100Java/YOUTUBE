@@ -29,7 +29,7 @@ from clipforge.services.subtitles import (
 )
 from clipforge.services.video.crop import CropWindow, center_crop_within
 from clipforge.services.video.encoder import EncoderProfile, resolve_encoder
-from clipforge.services.video.framing import CropPlan, build_track, plan_crop
+from clipforge.services.video.framing import CropPlan, FocusSource, build_track, plan_crop
 from clipforge.services.video.letterbox import detect_content_window
 from clipforge.services.video.probe import probe_video
 from clipforge.services.video.render import render_vertical_clip
@@ -48,6 +48,9 @@ class ClipRenderPlan:
     #: Frase que se escribe arriba en los primeros segundos. En un clip sin
     #: diálogo es lo único escrito que lleva.
     hook: str | None = None
+    #: Encuadre corregido a mano, en píxeles del original. Con None manda el
+    #: automático.
+    crop_x: int | None = None
 
     @property
     def stem(self) -> str:
@@ -97,6 +100,8 @@ class RenderedClip:
     encoder: str
     cues: int
     has_hook: bool
+    crop_x: int
+    crop_width: int
 
 
 def build_setup(
@@ -147,6 +152,21 @@ def plan_framing(plan: ClipRenderPlan, setup: RenderSetup) -> CropPlan:
     hay ninguna reconocible, por dónde está el movimiento.
     """
     centered = center_crop_within(setup.content, settings.output_width, settings.output_height)
+
+    # La corrección del usuario gana siempre. Si ha movido el encuadre a mano es
+    # porque el automático se equivocó, y volver a calcularlo en cada render le
+    # desharía el trabajo delante de las narices.
+    if plan.crop_x is not None:
+        lowest = setup.content.x
+        highest = setup.content.x + setup.content.width - centered.width
+        fixed = max(lowest, min(highest, plan.crop_x))
+        fixed -= fixed % 2
+        logger.info("render.manual_framing", x=fixed, requested=plan.crop_x)
+        return CropPlan(
+            window=CropWindow(x=fixed, y=centered.y, width=centered.width, height=centered.height),
+            source=FocusSource.MANUAL,
+        )
+
     if not settings.smart_crop:
         return CropPlan(window=centered)
 
@@ -230,4 +250,6 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         encoder=result.encoder,
         cues=len(cues),
         has_hook=hook is not None,
+        crop_x=framing.window.x,
+        crop_width=framing.window.width,
     )

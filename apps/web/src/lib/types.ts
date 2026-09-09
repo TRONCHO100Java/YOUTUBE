@@ -93,6 +93,11 @@ export interface ClipCandidate {
   /** null cuando no lo ha juzgado ningún modelo (señales o manual). */
   scores: ClipScoreBreakdown | null;
   clip_id: string | null;
+  /** Encuadre corregido a mano. null = manda el automático. */
+  crop_x: number | null;
+  /** Encuadre con el que se generó el fichero que hay ahora. */
+  rendered_crop_x: number | null;
+  rendered_crop_width: number | null;
 }
 
 export interface GeneratedClip {

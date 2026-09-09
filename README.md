@@ -437,6 +437,18 @@ comedia, plano general con acción a un lado  x 656 → 300   (−356 px, sin ca
 podcast, plano ya centrado                   x 656 → 644   (−12 px)
 ```
 
+Cuando se equivoca, se corrige a mano. En el editor, al seleccionar un clip
+aparece sobre el reproductor el rectángulo 9:16 que va a sobrevivir, con lo que
+se pierde atenuado a los lados; se arrastra y ya está. Esa corrección se guarda
+en `clip_candidates.crop_x` y **gana siempre**: el encuadre automático no se
+vuelve a calcular para ese clip, porque recalcularlo desharía el trabajo del
+usuario delante de sus narices. El botón «Volver al automático» limpia la
+columna y devuelve la decisión a la máquina.
+
+El encuadre con el que se generó cada fichero se guarda en `generated_clips`,
+que es lo que permite pintar el rectángulo sin rehacer el análisis solo para
+dibujarlo.
+
 Con `SMART_CROP_PAN=true` la ventana además **sigue** al sujeto: se interpolan hasta doce
 keyframes en una expresión del filtro `crop` de ffmpeg, que la evalúa en cada fotograma. Va
 desactivado por defecto porque una cámara que se mueve sola no le sienta bien a todo el
@@ -457,6 +469,30 @@ cada valor del estilo es un píxel del clip final.
 
 ```
 BURN_SUBTITLES=true          # false deja el clip limpio; el .srt se genera igual
+```
+
+### Audio
+
+Dos tratamientos que no se ven pero se notan al publicar.
+
+**Volumen.** Medido con `ebur128` sobre tres vídeos de YouTube, los mismos
+tramos sin tratar daban −12,5, −13,7 y −19,8 LUFS: **siete decibelios** entre el
+más fuerte y el más flojo. Las plataformas normalizan al reproducir, pero lo
+hacen *bajando* el que se pasa, así que un clip flojo se queda flojo.
+`loudnorm` deja todos en −14 LUFS con un techo de pico que evita el recorte al
+pasar a AAC.
+
+**Entrada y salida.** Cortar en seco a mitad de una forma de onda produce un
+chasquido audible. 80 ms de entrada lo eliminan sin que se perciba como fundido;
+la salida es más larga porque un corte brusco al final se oye como un fallo de
+reproducción. El vídeo **no** se funde a negro: los primeros fotogramas son
+justo donde se decide si alguien sigue mirando.
+
+```
+AUDIO_NORMALIZE=true
+AUDIO_TARGET_LUFS=-14
+AUDIO_FADE_IN_SECONDS=0.08
+AUDIO_FADE_OUT_SECONDS=0.35
 ```
 
 ### Gancho en pantalla

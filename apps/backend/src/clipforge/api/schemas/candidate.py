@@ -62,6 +62,12 @@ class ClipCandidateRead(BaseModel):
     scores: ClipScoreBreakdown | None
     #: Id del clip ya renderizado, si lo tiene.
     clip_id: uuid.UUID | None
+    #: Encuadre corregido a mano. None = manda el automático.
+    crop_x: int | None
+    #: Encuadre con el que se generó el fichero que hay ahora, para poder
+    #: pintarlo sobre el vídeo en el editor.
+    rendered_crop_x: int | None
+    rendered_crop_width: int | None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -104,6 +110,11 @@ class ClipCandidateRead(BaseModel):
             score=candidate.score,  # type: ignore[attr-defined]
             scores=breakdown,
             clip_id=clip.id if clip is not None else None,  # type: ignore[attr-defined]
+            crop_x=candidate.crop_x,  # type: ignore[attr-defined]
+            rendered_crop_x=clip.crop_x if clip is not None else None,  # type: ignore[attr-defined]
+            rendered_crop_width=(
+                clip.crop_width if clip is not None else None  # type: ignore[attr-defined]
+            ),
         )
 
 
@@ -155,6 +166,14 @@ class ClipCandidateUpdate(BaseModel):
     )
     status: CandidateStatus | None = Field(
         None, description="Para descartar un candidato sin borrarlo (REJECTED)"
+    )
+    crop_x: int | None = Field(
+        None,
+        ge=-1,
+        description=(
+            "Posición horizontal del recorte 9:16 en píxeles del original. "
+            "-1 devuelve el encuadre al automático."
+        ),
     )
 
     @model_validator(mode="after")

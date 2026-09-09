@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from clipforge.core.config import settings
-from clipforge.services.video.crop import CropWindow
+from clipforge.services.video.crop import CropWindow, center_crop_within
 from clipforge.services.video.framing import (
     CropPlan,
     FocusSample,
@@ -311,3 +311,24 @@ def test_travel_measures_the_full_span() -> None:
     ]
 
     assert _track(np.empty(0), samples=samples).travel == 700.0
+
+
+# ------------------------------------------------------- corrección del usuario
+def test_a_manual_offset_is_kept_exactly() -> None:
+    """Si alguien ha movido el encuadre, recalcularlo le desharía el trabajo."""
+    content = CropWindow(x=0, y=0, width=1920, height=1080)
+    centered = center_crop_within(content, 1080, 1920)
+
+    plan = CropPlan(
+        window=CropWindow(x=1000, y=centered.y, width=centered.width, height=centered.height),
+        source=FocusSource.MANUAL,
+    )
+
+    assert plan.source is FocusSource.MANUAL
+    assert plan.to_filter() == f"crop={centered.width}:{centered.height}:1000:{centered.y}"
+
+
+def test_manual_is_a_source_of_its_own() -> None:
+    """No es ni cara, ni movimiento, ni centro: lo decidió una persona."""
+    assert FocusSource.MANUAL.value == "manual"
+    assert FocusSource.MANUAL not in (FocusSource.FACE, FocusSource.MOTION, FocusSource.CENTER)

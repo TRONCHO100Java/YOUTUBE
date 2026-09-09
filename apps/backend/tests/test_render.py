@@ -17,7 +17,7 @@ from clipforge.core.errors import ExternalToolError
 from clipforge.services.subtitles import SourceSegment, build_cues, write_ass
 from clipforge.services.video.encoder import LIBX264, EncoderProfile, _profile
 from clipforge.services.video.probe import probe_video
-from clipforge.services.video.render import render_vertical_clip
+from clipforge.services.video.render import build_audio_filters, render_vertical_clip
 
 CPU_ENCODER: EncoderProfile = _profile(LIBX264)
 
@@ -150,3 +150,54 @@ def test_missing_source_is_rejected(tmp_path: Path) -> None:
             end=2.0,
             encoder=CPU_ENCODER,
         )
+
+
+# ---------------------------------------------------------------------- audio
+class TestAudioFilters:
+    """Tratamiento de audio del clip.
+
+    Sobre material real medido con `ebur128`, tres fuentes de YouTube daban
+    -12,5, -13,7 y -19,8 LUFS: siete decibelios de diferencia entre el clip más
+    fuerte y el más flojo. En un feed eso se nota.
+    """
+
+    @pytest.fixture(autouse=True)
+    def defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "audio_normalize", True)
+        monkeypatch.setattr(settings, "audio_target_lufs", -14.0)
+        monkeypatch.setattr(settings, "audio_true_peak", -1.5)
+        monkeypatch.setattr(settings, "audio_fade_in_seconds", 0.08)
+        monkeypatch.setattr(settings, "audio_fade_out_seconds", 0.35)
+
+    def test_loudness_is_normalised_to_the_social_target(self) -> None:
+        [normalise, *_] = build_audio_filters(30.0)
+
+        assert normalise.startswith("loudnorm=")
+        assert "I=-14.0" in normalise
+        assert "TP=-1.5" in normalise
+
+    def test_the_fades_bracket_the_clip(self) -> None:
+        filters = build_audio_filters(30.0)
+
+        assert "afade=t=in:st=0:d=0.080" in filters
+        assert "afade=t=out:st=29.650:d=0.350" in filters
+
+    def test_the_fade_out_never_eats_a_short_clip(self) -> None:
+        """En un clip de un segundo, 350 ms de salida son un tercio del clip."""
+        filters = build_audio_filters(1.0)
+
+        out = next(f for f in filters if "t=out" in f)
+        assert "d=0.250" in out  # recortado a un cuarto de la duración
+
+    def test_normalisation_can_be_turned_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "audio_normalize", False)
+
+        assert not any(f.startswith("loudnorm") for f in build_audio_filters(30.0))
+
+    def test_everything_can_be_turned_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Sin filtros, el comando de ffmpeg no debe llevar un `-af` vacío."""
+        monkeypatch.setattr(settings, "audio_normalize", False)
+        monkeypatch.setattr(settings, "audio_fade_in_seconds", 0.0)
+        monkeypatch.setattr(settings, "audio_fade_out_seconds", 0.0)
+
+        assert build_audio_filters(30.0) == []

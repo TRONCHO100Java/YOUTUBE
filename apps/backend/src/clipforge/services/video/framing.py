@@ -66,6 +66,8 @@ class FocusSource(StrEnum):
     FACE = "face"
     MOTION = "motion"
     CENTER = "center"
+    #: Lo movió una persona en el editor. No se recalcula nunca.
+    MANUAL = "manual"
 
 
 @dataclass(frozen=True, slots=True)

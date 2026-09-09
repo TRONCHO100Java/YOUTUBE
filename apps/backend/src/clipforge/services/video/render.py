@@ -85,6 +85,8 @@ def render_vertical_clip(
         # no depende del lienzo que libass suponga.
         filters.append(f"ass={_escape_filter_arg(subtitles.name)}")
 
+    audio_filters = build_audio_filters(duration)
+
     command = [
         settings.ffmpeg_path,
         "-hide_banner",
@@ -101,6 +103,7 @@ def render_vertical_clip(
         str(source),
         "-vf",
         ",".join(filters),
+        *(["-af", ",".join(audio_filters)] if audio_filters else []),
         *profile.args,
         "-c:a",
         "aac",
@@ -137,6 +140,7 @@ def render_vertical_clip(
         duration=round(result.duration, 2),
         size_mb=round(destination.stat().st_size / 1_048_576, 1),
         subtitles=subtitles is not None,
+        audio=",".join(audio_filters) or "sin tratar",
     )
 
     return RenderResult(
@@ -148,6 +152,43 @@ def render_vertical_clip(
         encoder=profile.name,
         has_burned_subtitles=subtitles is not None,
     )
+
+
+def build_audio_filters(duration: float) -> list[str]:
+    """Cadena de filtros de audio del clip.
+
+    Dos tratamientos que no se ven pero se notan en cuanto se publica:
+
+    **Volumen.** Un clip sacado de un pódcast bien masterizado y otro de un
+    vídeo grabado con el móvil se llevan quince decibelios. Las plataformas
+    normalizan al reproducir, pero lo hacen bajando el que se pasa, así que un
+    clip flojo se queda flojo. `loudnorm` lo deja en el objetivo estándar de
+    audio social (-14 LUFS) con un techo de pico que evita el recorte.
+
+    **Entrada y salida.** Cortar en seco a mitad de una forma de onda produce un
+    chasquido audible. Ochenta milisegundos de entrada lo eliminan sin que se
+    perciba como un fundido; la salida es más larga porque un corte brusco al
+    final se oye como un fallo de reproducción.
+
+    El vídeo NO se funde a negro: los primeros fotogramas son justo donde se
+    decide si alguien sigue mirando, y empezar en negro los regala.
+    """
+    filters: list[str] = []
+
+    if settings.audio_normalize:
+        filters.append(
+            f"loudnorm=I={settings.audio_target_lufs}:TP={settings.audio_true_peak}:LRA=11"
+        )
+
+    fade_in = settings.audio_fade_in_seconds
+    if fade_in > 0:
+        filters.append(f"afade=t=in:st=0:d={fade_in:.3f}")
+
+    fade_out = min(settings.audio_fade_out_seconds, duration / 4)
+    if fade_out > 0:
+        filters.append(f"afade=t=out:st={max(0.0, duration - fade_out):.3f}:d={fade_out:.3f}")
+
+    return filters
 
 
 def _escape_filter_arg(value: str) -> str:

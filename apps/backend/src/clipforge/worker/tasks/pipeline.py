@@ -560,6 +560,7 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
                 start=candidate.start_time,
                 end=candidate.end_time,
                 hook=candidate.hook,
+                crop_x=candidate.crop_x,
             )
             for position, candidate in enumerate(candidates, start=1)
         ]
@@ -667,6 +668,8 @@ def render_and_store(plan: ClipRenderPlan, setup: RenderSetup) -> None:
                 filesize_bytes=result.filesize_bytes,
                 has_burned_subtitles=result.has_burned_subtitles,
                 encoder=result.encoder,
+                crop_x=result.crop_x,
+                crop_width=result.crop_width,
             )
         )
         candidate = session.get(ClipCandidate, plan.candidate_id)

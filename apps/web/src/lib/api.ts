@@ -178,6 +178,8 @@ export function updateCandidate(
     title: string;
     /** Texto que se escribe sobre el vídeo. Cadena vacía lo quita. */
     hook: string;
+    /** Recorte 9:16 en píxeles del original. -1 vuelve al automático. */
+    crop_x: number;
     status: CandidateStatus;
   }>,
 ): Promise<ClipCandidate> {

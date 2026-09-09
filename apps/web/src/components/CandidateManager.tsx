@@ -24,8 +24,10 @@ interface Props {
   candidates: ClipCandidate[];
   profile: ContentProfile;
   onChanged: () => void;
-  /** Llevar el reproductor al tramo del candidato. */
-  onPreview: (start: number, end: number) => void;
+  /** Llevar el reproductor al tramo del candidato y trabajar sobre él. */
+  onPreview: (candidate: ClipCandidate) => void;
+  /** Cuál está seleccionado ahora mismo. */
+  activeId: string | null;
 }
 
 /**
@@ -35,7 +37,13 @@ interface Props {
  * usuario, "el clip 3" es una sola cosa que a veces todavía no tiene vídeo, y
  * separarlos en dos listas obligaba a cruzarlas mentalmente.
  */
-export function CandidateManager({ candidates, profile, onChanged, onPreview }: Props) {
+export function CandidateManager({
+  candidates,
+  profile,
+  onChanged,
+  onPreview,
+  activeId,
+}: Props) {
   if (candidates.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-zinc-500">
@@ -54,6 +62,7 @@ export function CandidateManager({ candidates, profile, onChanged, onPreview }: 
           profile={profile}
           onChanged={onChanged}
           onPreview={onPreview}
+          active={candidate.id === activeId}
         />
       ))}
     </ol>
@@ -65,11 +74,13 @@ function CandidateRow({
   profile,
   onChanged,
   onPreview,
+  active,
 }: {
   candidate: ClipCandidate;
   profile: ContentProfile;
   onChanged: () => void;
-  onPreview: (start: number, end: number) => void;
+  onPreview: (candidate: ClipCandidate) => void;
+  active: boolean;
 }) {
   const [busy, setBusy] = useState<null | "render" | "delete" | "title" | "hook">(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +106,13 @@ function CandidateRow({
   const working = candidate.status === "RENDERING" || candidate.status === "SELECTED";
 
   return (
-    <li className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+    <li
+      className={`rounded-xl border p-3 transition ${
+        active
+          ? "border-emerald-500/40 bg-emerald-500/[0.06]"
+          : "border-white/10 bg-white/[0.03]"
+      }`}
+    >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="font-mono text-xs text-zinc-600">#{candidate.rank ?? "—"}</span>
 
@@ -119,13 +136,22 @@ function CandidateRow({
 
         <button
           type="button"
-          onClick={() => onPreview(candidate.start_time, candidate.end_time)}
+          onClick={() => onPreview(candidate)}
           className="shrink-0 font-mono text-xs tabular-nums text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
-          title="Ver este tramo en el reproductor"
+          title="Ver este tramo y editar su encuadre"
         >
           {formatTime(candidate.start_time)} – {formatTime(candidate.end_time)} ·{" "}
           {Math.round(candidate.duration)}s
         </button>
+
+        {candidate.crop_x !== null && (
+          <span
+            className="shrink-0 rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-violet-300"
+            title="El encuadre lo has fijado tú; no se recalcula"
+          >
+            Encuadre fijo
+          </span>
+        )}
 
         <StatusBadge status={candidate.status} />
       </div>

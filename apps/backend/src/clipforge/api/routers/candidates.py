@@ -57,6 +57,10 @@ async def update_candidate(
     candidate.end_time = end
     if payload.title is not None:
         candidate.title = payload.title.strip()
+    if payload.crop_x is not None:
+        # -1 es "vuelve a decidirlo tú": deja la columna en NULL y el próximo
+        # render recalcula el encuadre automático.
+        candidate.crop_x = None if payload.crop_x < 0 else payload.crop_x
     if payload.hook is not None:
         # Cadena vacía = quitar el gancho. Guardar "" en lugar de NULL haría
         # que el render escribiese una línea en blanco sobre el vídeo.

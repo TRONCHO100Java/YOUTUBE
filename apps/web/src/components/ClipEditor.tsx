@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { CropOverlay } from "@/components/CropOverlay";
 import { SignalTimeline } from "@/components/SignalTimeline";
 import { createCandidate, projectSourceUrl } from "@/lib/api";
 import type {
@@ -21,7 +22,10 @@ interface Props {
   project: ProjectDetail;
   timeline: Timeline | null;
   candidates: ClipCandidate[];
+  /** Clip sobre el que se está trabajando; su encuadre es el que se edita. */
+  active: ClipCandidate | null;
   onCreated: () => void;
+  onCropChange: (candidateId: string, cropX: number) => void;
 }
 
 /**
@@ -31,10 +35,20 @@ interface Props {
  * hacer salvo reprocesar y cruzar los dedos. Con esto, un vídeo del que el
  * análisis no sacó nada sigue siendo perfectamente aprovechable.
  */
-export function ClipEditor({ project, timeline, candidates, onCreated }: Props) {
+export function ClipEditor({
+  project,
+  timeline,
+  candidates,
+  active,
+  onCreated,
+  onCropChange,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(project.duration ?? 0);
+  // Dimensiones reales del fichero: el recuadro de encuadre trabaja en
+  // píxeles del original, no en los del reproductor.
+  const [size, setSize] = useState({ width: 0, height: 0 });
   const [markIn, setMarkIn] = useState<number | null>(null);
   const [markOut, setMarkOut] = useState<number | null>(null);
   const [title, setTitle] = useState("");
@@ -163,7 +177,7 @@ export function ClipEditor({ project, timeline, candidates, onCreated }: Props) 
 
   return (
     <section className="space-y-3" aria-label="Editor de clips">
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-black">
+      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
         <video
           ref={videoRef}
           src={projectSourceUrl(project.id)}
@@ -171,14 +185,40 @@ export function ClipEditor({ project, timeline, candidates, onCreated }: Props) 
           preload="metadata"
           className="mx-auto max-h-[52vh] w-full bg-black"
           onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-          onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+          onLoadedMetadata={(event) => {
+            setDuration(event.currentTarget.duration);
+            setSize({
+              width: event.currentTarget.videoWidth,
+              height: event.currentTarget.videoHeight,
+            });
+          }}
           onPause={(event) => {
             // La lanzadera deja la velocidad alterada; al parar se vuelve a 1x
             // para que el siguiente play no salga disparado.
             event.currentTarget.playbackRate = 1;
           }}
         />
+
+        {/* El recuadro solo aparece con un clip seleccionado: sin uno no hay
+            encuadre concreto que corregir, y taparía el vídeo para nada. */}
+        {active && (
+          <CropOverlay
+            sourceWidth={size.width}
+            sourceHeight={size.height}
+            cropX={active.crop_x ?? active.rendered_crop_x}
+            manual={active.crop_x !== null}
+            onChange={(value) => onCropChange(active.id, value)}
+            onReset={() => onCropChange(active.id, -1)}
+          />
+        )}
       </div>
+
+      {active && (
+        <p className="text-xs text-zinc-500">
+          Encuadre de <span className="text-zinc-300">{active.title}</span>. Arrastra
+          sobre el vídeo para moverlo y vuelve a generar el clip para aplicarlo.
+        </p>
+      )}
 
       {timeline ? (
         <SignalTimeline

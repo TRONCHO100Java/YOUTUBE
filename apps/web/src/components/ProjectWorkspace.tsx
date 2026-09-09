@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CandidateManager } from "@/components/CandidateManager";
 import { ClipEditor } from "@/components/ClipEditor";
-import { getProject, getSignals, listCandidates } from "@/lib/api";
+import { getProject, getSignals, listCandidates, updateCandidate } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { POLL_INTERVAL_MS } from "@/lib/config";
 import {
@@ -36,6 +36,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   );
 
   const [timeline, setTimeline] = useState<SignalTimeline | null>(null);
+  // Clip sobre el que se trabaja: es el que se previsualiza y el que se
+  // reencuadra. Sin uno seleccionado el editor solo crea clips nuevos.
+  const [activeId, setActiveId] = useState<string | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
   // Las señales se piden una sola vez, en cuanto el proyecto dice que existen.
@@ -56,12 +59,22 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     };
   }, [projectId, hasSignals, timeline]);
 
-  const preview = useCallback((start: number) => {
+  const preview = useCallback((candidate: ClipCandidate) => {
+    setActiveId(candidate.id);
     const video = editorRef.current?.querySelector("video");
     if (!video) return;
-    video.currentTime = start;
+    video.currentTime = candidate.start_time;
     video.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+
+  const changeCrop = useCallback(
+    (candidateId: string, cropX: number) => {
+      // Se guarda en cada arrastre en lugar de esperar a un botón: el valor es
+      // un solo número y el editor ya vive de pedirle cosas al servidor.
+      void updateCandidate(candidateId, { crop_x: cropX }).then(refreshCandidates);
+    },
+    [refreshCandidates],
+  );
 
   if (error) {
     return (
@@ -132,7 +145,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             project={project}
             timeline={timeline}
             candidates={list}
+            active={list.find((candidate) => candidate.id === activeId) ?? null}
             onCreated={refreshCandidates}
+            onCropChange={changeCrop}
           />
         </div>
       ) : (
@@ -151,6 +166,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           profile={project.content_profile ?? "TALKING"}
           onChanged={refreshCandidates}
           onPreview={preview}
+          activeId={activeId}
         />
       </section>
     </div>

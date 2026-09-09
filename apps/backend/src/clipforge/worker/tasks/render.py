@@ -102,6 +102,7 @@ def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any, uuid.UUID]:
             start=candidate.start_time,
             end=candidate.end_time,
             hook=candidate.hook,
+            crop_x=candidate.crop_x,
         )
         project_id = project.id
         video_relative = project.source_video_path

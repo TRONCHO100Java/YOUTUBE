@@ -79,6 +79,11 @@ class ClipCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    #: Posición horizontal del recorte 9:16, en píxeles del vídeo original.
+    #: Solo se rellena cuando el usuario corrige el encuadre a mano; con NULL
+    #: manda el encuadre automático, que se recalcula en cada render.
+    crop_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     project: Mapped[Project] = relationship(back_populates="candidates")
     generated_clip: Mapped[GeneratedClip | None] = relationship(
         back_populates="candidate", cascade="all, delete-orphan", uselist=False
@@ -112,6 +117,12 @@ class GeneratedClip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     filesize_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     has_burned_subtitles: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     encoder: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    #: Encuadre con el que se genero REALMENTE este fichero, en pixeles del
+    #: original. Es lo que el editor pinta sobre el video para que se vea que
+    #: parte se quedo dentro, y desde donde se corrige.
+    crop_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    crop_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     candidate: Mapped[ClipCandidate] = relationship(back_populates="generated_clip")
 

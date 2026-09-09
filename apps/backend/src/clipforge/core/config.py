@@ -93,6 +93,20 @@ class Settings(BaseSettings):
     output_width: int = 1080
     output_height: int = 1920
 
+    # ----------------------------------------------------------------- audio
+    #: Iguala el volumen de todos los clips. Sin esto, uno sacado de un
+    #: pódcast y otro de un vídeo casero se llevan quince decibelios.
+    audio_normalize: bool = True
+    #: Objetivo estándar de audio social.
+    audio_target_lufs: float = -14.0
+    #: Techo de pico real, para que no recorte al convertir a AAC.
+    audio_true_peak: float = -1.5
+    #: Entrada corta: quita el chasquido de cortar a mitad de una onda sin
+    #: que se perciba como un fundido.
+    audio_fade_in_seconds: float = 0.08
+    #: Salida más larga: un corte brusco al final se oye como un fallo.
+    audio_fade_out_seconds: float = 0.35
+
     # ------------------------------------------------------------- encuadre
     #: Coloca la ventana vertical sobre el sujeto en lugar de centrarla. En un
     #: plano general con dos personas, centrar deja a una fuera del clip.
