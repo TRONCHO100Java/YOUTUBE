@@ -3,19 +3,30 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Query, status
+from fastapi.responses import FileResponse
 
-from clipforge.api.deps import ClipRepo, ProjectRepo
-from clipforge.api.schemas.candidate import ClipCandidateRead
+from clipforge.api.deps import CandidateRepo, ClipRepo, ProjectRepo
+from clipforge.api.schemas.candidate import (
+    ClipCandidateCreate,
+    ClipCandidateRead,
+)
 from clipforge.api.schemas.clip import GeneratedClipRead
 from clipforge.api.schemas.common import Page
 from clipforge.api.schemas.project import ProjectCreate, ProjectDetail, ProjectSummary
 from clipforge.api.schemas.transcript import TranscriptRead, TranscriptSegmentRead
-from clipforge.core.errors import ConflictError, NotFoundError
+from clipforge.core.errors import ConflictError, NotFoundError, ValidationError
 from clipforge.core.logging import get_logger
-from clipforge.core.storage import ProjectStorage
-from clipforge.db.models import Project, ProjectStatus
+from clipforge.core.storage import ProjectStorage, absolute_from_storage, sanitize_filename
+from clipforge.db.models import (
+    CandidateSource,
+    CandidateStatus,
+    ClipCandidate,
+    Project,
+    ProjectStatus,
+)
 from clipforge.services.source.urls import validate_source_url
 from clipforge.worker.tasks.pipeline import process_project
 
@@ -120,10 +131,12 @@ async def get_transcript(
     response_model=list[ClipCandidateRead],
     summary="Momentos detectados por la IA",
 )
-async def list_candidates(project_id: uuid.UUID, repo: ProjectRepo) -> list[ClipCandidateRead]:
+async def list_candidates(
+    project_id: uuid.UUID, repo: ProjectRepo, candidates: CandidateRepo
+) -> list[ClipCandidateRead]:
     await _require(project_id, repo)
-    candidates = await repo.list_candidates(project_id)
-    return [ClipCandidateRead.from_model(candidate) for candidate in candidates]
+    rows = await candidates.list_for_project(project_id)
+    return [ClipCandidateRead.from_model(candidate) for candidate in rows]
 
 
 @router.get(
@@ -183,6 +196,120 @@ async def delete_project(project_id: uuid.UUID, repo: ProjectRepo) -> None:
     # El storage se borra tras el commit: si la BD falla, no perdemos ficheros.
     ProjectStorage(project_id).delete_all()
     logger.info("project.deleted", project_id=str(project_id))
+
+
+@router.get(
+    "/{project_id}/signals",
+    summary="Señales no verbales del vídeo",
+    response_model=dict,
+)
+async def get_signals(project_id: uuid.UUID, repo: ProjectRepo) -> dict[str, Any]:
+    """Curva de energía, cortes de plano, movimiento y bloques candidatos.
+
+    Es lo que dibuja la línea de tiempo del editor. Se sirve tal cual se guardó:
+    ya viene submuestreada para caber en una pantalla, así que no hace falta
+    filtrarla aquí.
+    """
+    project = await _require(project_id, repo)
+    if not project.signals:
+        raise NotFoundError(
+            f"El proyecto {project_id} todavía no tiene señales medidas. "
+            "Vuelve a procesarlo para generarlas."
+        )
+    return dict(project.signals)
+
+
+@router.get(
+    "/{project_id}/source",
+    summary="Vídeo original del proyecto",
+    response_class=FileResponse,
+    responses={200: {"content": {"video/mp4": {}}}},
+)
+async def get_source_video(project_id: uuid.UUID, repo: ProjectRepo) -> FileResponse:
+    """Sirve el MP4 de origen para poder recortarlo en el navegador.
+
+    `FileResponse` responde a peticiones por rangos, que es lo que necesita la
+    etiqueta `<video>` para saltar dentro de un fichero de cientos de megas sin
+    descargarlo entero. Sin esto, el editor manual tendría que esperar a la
+    descarga completa antes de dejar mover la cabeza lectora.
+    """
+    project = await _require(project_id, repo)
+    if not project.source_video_path:
+        raise NotFoundError(f"El proyecto {project_id} no tiene vídeo descargado")
+
+    try:
+        path = absolute_from_storage(project.source_video_path)
+    except ValueError as exc:
+        raise NotFoundError("Ruta de fichero inválida") from exc
+    if not path.is_file():
+        raise NotFoundError(
+            "El vídeo original ya no está en disco. Vuelve a procesar el proyecto "
+            "para descargarlo otra vez."
+        )
+
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        filename=f"{sanitize_filename(project.title or 'video', fallback='video')}.mp4",
+        content_disposition_type="inline",
+    )
+
+
+@router.post(
+    "/{project_id}/candidates",
+    response_model=ClipCandidateRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear un clip a mano",
+)
+async def create_candidate(
+    project_id: uuid.UUID,
+    payload: ClipCandidateCreate,
+    repo: ProjectRepo,
+    candidates: CandidateRepo,
+) -> ClipCandidateRead:
+    """Registra un recorte hecho por el usuario, listo para renderizar.
+
+    Los límites de duración del perfil NO se aplican: son una guía para la IA,
+    no una regla para la persona que está mirando el vídeo. Lo único que se
+    comprueba es que el rango exista dentro del original.
+    """
+    project = await _require(project_id, repo)
+    if not project.source_video_path:
+        raise ConflictError(
+            "El proyecto todavía no tiene vídeo descargado; espera a que termine "
+            "la descarga para recortar"
+        )
+    if project.duration and payload.end_time > project.duration + 1.0:
+        raise ValidationError(
+            f"La salida ({payload.end_time:.1f}s) se sale del vídeo, "
+            f"que dura {project.duration:.1f}s"
+        )
+
+    candidate = await candidates.add(
+        ClipCandidate(
+            project_id=project_id,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            title=payload.title.strip(),
+            reason="Recortado a mano.",
+            # Sin puntuación: nadie lo ha valorado, y ponerle un cero lo
+            # enterraría al final de una lista ordenada por nota.
+            score=0.0,
+            status=CandidateStatus.PENDING,
+            source=CandidateSource.MANUAL,
+            rank=await candidates.next_rank(project_id),
+        )
+    )
+    await candidates.session.commit()
+    created = await candidates.get(candidate.id)
+
+    logger.info(
+        "candidate.created_manually",
+        project_id=str(project_id),
+        start=round(payload.start_time, 2),
+        end=round(payload.end_time, 2),
+    )
+    return ClipCandidateRead.from_model(created or candidate)
 
 
 async def _require(project_id: uuid.UUID, repo: ProjectRepo) -> Project:

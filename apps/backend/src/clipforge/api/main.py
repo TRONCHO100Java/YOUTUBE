@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
+from typing import Any
 
 import structlog
 from fastapi import FastAPI, Request
@@ -15,7 +16,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from clipforge import __version__
-from clipforge.api.routers import clips, health, projects
+from clipforge.api.routers import candidates, clips, health, projects
 from clipforge.core.config import settings
 from clipforge.core.errors import ClipForgeError
 from clipforge.core.logging import configure_logging, get_logger
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(projects.router, prefix=API_PREFIX)
     app.include_router(clips.router, prefix=API_PREFIX)
+    app.include_router(candidates.router, prefix=API_PREFIX)
     return app
 
 
@@ -120,13 +122,17 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        errors = _serializable_errors(exc.errors())
         return JSONResponse(
             status_code=422,
             content={
                 "error": {
                     "code": "validation_error",
-                    "message": "Los datos enviados no son validos",
-                    "details": {"errors": exc.errors()},
+                    # Cuando el fallo es de una sola regla, su mensaje dice mucho
+                    # mas que un "los datos no son validos" generico: es lo que
+                    # acaba leyendo el usuario en el editor.
+                    "message": _validation_message(errors),
+                    "details": {"errors": errors},
                 }
             },
         )
@@ -152,6 +158,35 @@ def _register_exception_handlers(app: FastAPI) -> None:
             status_code=500,
             content={"error": {"code": "internal_error", "message": message, "details": {}}},
         )
+
+
+def _serializable_errors(errors: Sequence[Any]) -> list[dict[str, Any]]:
+    """Deja los errores de pydantic en algo que `json.dumps` acepte.
+
+    Un validador propio que lanza `ValueError` deja la excepcion dentro de
+    `ctx`, y serializarla revienta con un 500 justo cuando lo que habia era un
+    422 perfectamente explicable.
+    """
+    cleaned: list[dict[str, Any]] = []
+    for error in errors:
+        if not isinstance(error, dict):
+            cleaned.append({"msg": str(error)})
+            continue
+        item = {key: value for key, value in error.items() if key != "ctx"}
+        context = error.get("ctx")
+        if isinstance(context, dict):
+            item["ctx"] = {key: str(value) for key, value in context.items()}
+        cleaned.append(item)
+    return cleaned
+
+
+def _validation_message(errors: list[dict[str, Any]]) -> str:
+    """Mensaje corto para el usuario a partir del primer error."""
+    if len(errors) == 1:
+        message = str(errors[0].get("msg", "")).removeprefix("Value error, ").strip()
+        if message:
+            return message
+    return "Los datos enviados no son validos"
 
 
 app = create_app()

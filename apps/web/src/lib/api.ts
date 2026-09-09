@@ -1,11 +1,13 @@
 import { API_BASE_URL } from "@/lib/config";
 import type {
+  CandidateStatus,
   ClipCandidate,
   GeneratedClip,
   Page,
   ProjectDetail,
   ProjectSummary,
   Readiness,
+  SignalTimeline,
 } from "@/lib/types";
 
 /** Error con la forma que devuelve el manejador central de la API. */
@@ -57,6 +59,37 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
 }
 
 /**
+ * Variante para respuestas sin cuerpo (204).
+ *
+ * `apiFetch` siempre intenta parsear JSON, y un DELETE que responde 204 no
+ * trae ninguno: parsearlo lanzaría un error de sintaxis sobre una respuesta
+ * que en realidad ha ido bien.
+ */
+async function apiFetchVoid(path: string, options: FetchOptions = {}): Promise<void> {
+  const { acceptStatuses = [], ...init } = options;
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...init.headers },
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(`No se puede conectar con la API en ${API_BASE_URL}`, 0, "network_error");
+  }
+
+  if (!response.ok && !acceptStatuses.includes(response.status)) {
+    const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+    throw new ApiError(
+      body.error?.message ?? `La API respondió ${response.status}`,
+      response.status,
+      body.error?.code ?? "http_error",
+    );
+  }
+}
+
+/**
  * Readiness: estado de Postgres, Redis y el worker Celery.
  *
  * Devuelve 503 cuando alguna dependencia falla, pero el cuerpo sigue siendo
@@ -101,4 +134,65 @@ export function clipSubtitlesUrl(clipId: string): string {
 
 export function listProjects(limit = 20, offset = 0): Promise<Page<ProjectSummary>> {
   return apiFetch<Page<ProjectSummary>>(`/api/projects?limit=${limit}&offset=${offset}`);
+}
+
+// ------------------------------------------------------- editor manual ---
+
+/** Detalle de un proyecto: es lo que consulta el polling del editor. */
+export function getProject(id: string): Promise<ProjectDetail> {
+  return apiFetch<ProjectDetail>(`/api/projects/${id}`);
+}
+
+/** Línea de tiempo de señales: energía, cortes, movimiento y bloques. */
+export function getSignals(projectId: string): Promise<SignalTimeline> {
+  return apiFetch<SignalTimeline>(`/api/projects/${projectId}/signals`);
+}
+
+/**
+ * URL del vídeo original.
+ *
+ * La pide directamente la etiqueta `<video>`, que necesita peticiones por
+ * rangos para poder saltar dentro de un fichero de cientos de megas.
+ */
+export function projectSourceUrl(projectId: string): string {
+  return `${API_BASE_URL}/api/projects/${projectId}/source`;
+}
+
+/** Crea un candidato a partir de un recorte hecho a mano. */
+export function createCandidate(
+  projectId: string,
+  span: { start_time: number; end_time: number; title: string },
+): Promise<ClipCandidate> {
+  return apiFetch<ClipCandidate>(`/api/projects/${projectId}/candidates`, {
+    method: "POST",
+    body: JSON.stringify(span),
+  });
+}
+
+/** Ajusta entrada, salida, título o estado de un candidato. */
+export function updateCandidate(
+  candidateId: string,
+  changes: Partial<{
+    start_time: number;
+    end_time: number;
+    title: string;
+    status: CandidateStatus;
+  }>,
+): Promise<ClipCandidate> {
+  return apiFetch<ClipCandidate>(`/api/candidates/${candidateId}`, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+}
+
+/** Encola el render de un único clip. */
+export function renderCandidate(candidateId: string): Promise<ClipCandidate> {
+  return apiFetch<ClipCandidate>(`/api/candidates/${candidateId}/render`, {
+    method: "POST",
+  });
+}
+
+/** Borra un candidato y, en cascada, el clip que hubiera generado. */
+export async function deleteCandidate(candidateId: string): Promise<void> {
+  await apiFetchVoid(`/api/candidates/${candidateId}`, { method: "DELETE" });
 }

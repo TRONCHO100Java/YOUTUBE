@@ -66,5 +66,13 @@ class Transcriber(ABC):
     """Convierte un fichero de audio en segmentos con timestamps."""
 
     @abstractmethod
-    def transcribe(self, audio_path: Path, *, language: str | None = None) -> TranscriptionResult:
-        """Transcribe `audio_path`. `language` fuerza el idioma; None lo detecta."""
+    def transcribe(
+        self, audio_path: Path, *, language: str | None = None, task: str | None = None
+    ) -> TranscriptionResult:
+        """Transcribe `audio_path`.
+
+        Args:
+            language: fuerza el idioma de origen; None lo detecta.
+            task: "transcribe" mantiene el idioma original, "translate" devuelve
+                el texto en inglés. None usa lo configurado.
+        """

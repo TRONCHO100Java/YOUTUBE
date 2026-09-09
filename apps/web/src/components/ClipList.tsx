@@ -1,8 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { type ReactNode, useEffect, useState } from "react";
 
-import { CandidateList } from "@/components/CandidateList";
 import { clipSubtitlesUrl, clipVideoUrl, listClips } from "@/lib/api";
 import type { GeneratedClip } from "@/lib/types";
 
@@ -59,10 +59,24 @@ export function ClipList({ projectId, emptyAction }: Props) {
     return <p className="px-4 pb-4 text-sm text-zinc-500">Cargando clips…</p>;
   }
 
-  // Un proyecto analizado antes de existir el render tiene candidatos pero no
-  // clips: se muestran igualmente sus momentos y puntuaciones.
+  // Un proyecto puede tener momentos detectados y ningún clip generado: se
+  // analizó con una versión anterior, o los candidatos salieron de las señales
+  // y están esperando a que alguien decida. El editor es donde se resuelve.
   if (clips.length === 0) {
-    return <CandidateList projectId={projectId} emptyAction={emptyAction} />;
+    return (
+      <div className="flex flex-wrap items-center gap-3 px-4 pb-4">
+        <p className="text-sm text-zinc-500">
+          Este proyecto no tiene clips generados todavía.
+        </p>
+        <Link
+          href={`/projects/${projectId}`}
+          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+        >
+          Abrir editor
+        </Link>
+        {emptyAction}
+      </div>
+    );
   }
 
   return (

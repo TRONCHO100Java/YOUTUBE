@@ -21,7 +21,7 @@ from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from clipforge.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from clipforge.db.models.enums import CandidateStatus
+from clipforge.db.models.enums import CandidateSource, CandidateStatus
 
 if TYPE_CHECKING:
     from clipforge.db.models.project import Project
@@ -66,6 +66,15 @@ class ClipCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         SAEnum(CandidateStatus, native_enum=False, length=16, name="candidate_status"),
         default=CandidateStatus.PENDING,
         nullable=False,
+    )
+    #: De donde salio el candidato. Un reprocesado sustituye lo que produjo la
+    #: maquina (AI y SIGNAL) pero nunca borra lo que ha recortado una persona.
+    source: Mapped[CandidateSource] = mapped_column(
+        SAEnum(CandidateSource, native_enum=False, length=16, name="candidate_source"),
+        default=CandidateSource.AI,
+        server_default=CandidateSource.AI.value,
+        nullable=False,
+        index=True,
     )
     rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

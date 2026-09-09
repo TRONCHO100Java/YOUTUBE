@@ -56,6 +56,10 @@ class ProjectRepository:
         stmt = (
             select(ClipCandidate)
             .where(ClipCandidate.project_id == project_id)
+            # El clip generado se serializa junto al candidato; sin cargarlo
+            # aqui, hacerlo dispararia una carga perezosa sincrona dentro del
+            # contexto asincrono.
+            .options(selectinload(ClipCandidate.generated_clip))
             .order_by(ClipCandidate.score.desc(), ClipCandidate.start_time)
         )
         result = await self.session.execute(stmt)

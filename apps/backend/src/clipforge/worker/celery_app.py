@@ -23,6 +23,7 @@ celery_app = Celery(
     include=[
         "clipforge.worker.tasks.system",
         "clipforge.worker.tasks.pipeline",
+        "clipforge.worker.tasks.render",
     ],
 )
 

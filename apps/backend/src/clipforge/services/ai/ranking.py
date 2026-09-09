@@ -71,4 +71,4 @@ def _ranking_key(candidate: ClipSuggestion) -> tuple[float, float, float]:
     El desempate importa: sin él el orden depende del orden de llegada de las
     ventanas y dos ejecuciones idénticas producen rankings distintos.
     """
-    return (candidate.score, candidate.scores.hook, -candidate.start_time)
+    return (candidate.score, candidate.hook_score, -candidate.start_time)

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { ClipList } from "@/components/ClipList";
@@ -16,7 +17,12 @@ function formatDuration(seconds: number | null): string {
 
 /** Los estados intermedios son los que justifican seguir haciendo polling. */
 function isRunning(status: ProjectSummary["status"]): boolean {
-  return status !== "CREATED" && status !== "COMPLETED" && status !== "FAILED";
+  return (
+    status !== "CREATED" &&
+    status !== "COMPLETED" &&
+    status !== "NEEDS_REVIEW" &&
+    status !== "FAILED"
+  );
 }
 
 interface Props {
@@ -35,6 +41,12 @@ export function ProjectCard({ project, onChanged }: Props) {
 
   const failed = project.status === "FAILED";
   const completed = project.status === "COMPLETED";
+  // El pipeline llegó al final pero la IA no propuso nada. No es un fallo: hay
+  // vídeo, hay señales y hay un editor esperando.
+  const needsReview = project.status === "NEEDS_REVIEW";
+  // En cuanto hay vídeo descargado se puede recortar a mano, aunque el resto
+  // del pipeline todavía esté en marcha o haya fallado después.
+  const editable = project.status !== "CREATED" && project.status !== "DOWNLOADING";
 
   async function reprocess() {
     setRetrying(true);
@@ -45,9 +57,7 @@ export function ProjectCard({ project, onChanged }: Props) {
       setExpanded(false);
       onChanged();
     } catch (cause: unknown) {
-      setError(
-        cause instanceof Error ? cause.message : "No se ha podido reprocesar",
-      );
+      setError(cause instanceof Error ? cause.message : "No se ha podido reprocesar");
     } finally {
       setRetrying(false);
     }
@@ -64,14 +74,14 @@ export function ProjectCard({ project, onChanged }: Props) {
 
   const reprocessButton = (
     <RegenerateButton
-      label={failed ? "Reintentar" : "Regenerar"}
+      label={failed || needsReview ? "Reintentar" : "Regenerar"}
       confirming={confirming}
       busy={retrying}
       onClick={handleReprocessClick}
       onBlur={() => setConfirming(false)}
       title={
         completed
-          ? "Vuelve a pasar el vídeo entero por el pipeline y sustituye los clips actuales"
+          ? "Vuelve a pasar el vídeo entero por el pipeline y sustituye los clips automáticos"
           : undefined
       }
     />
@@ -98,16 +108,22 @@ export function ProjectCard({ project, onChanged }: Props) {
             {project.title ?? project.source_url ?? project.id}
           </p>
           <p className="mt-0.5 flex items-center gap-2 text-xs text-zinc-500">
-            <span className={failed ? "text-rose-400" : undefined}>
+            <span
+              className={
+                failed ? "text-rose-400" : needsReview ? "text-amber-400" : undefined
+              }
+            >
               {PROJECT_STATUS_LABELS[project.status]}
               {isRunning(project.status) && "…"}
             </span>
             <span aria-hidden="true">·</span>
             <span>{formatDuration(project.duration)}</span>
           </p>
-          {failed && project.error_message && (
+          {(failed || needsReview) && project.error_message && (
             <p
-              className="mt-1 truncate text-xs text-rose-400/80"
+              className={`mt-1 truncate text-xs ${
+                failed ? "text-rose-400/80" : "text-amber-400/80"
+              }`}
               title={project.error_message}
             >
               {project.error_message}
@@ -115,6 +131,19 @@ export function ProjectCard({ project, onChanged }: Props) {
           )}
           {error && <p className="mt-1 text-xs text-rose-400">{error}</p>}
         </div>
+
+        {editable && (
+          <Link
+            href={`/projects/${project.id}`}
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-xs transition ${
+              needsReview
+                ? "bg-amber-500/90 font-medium text-amber-950 hover:bg-amber-400"
+                : "border border-white/10 text-zinc-300 hover:border-white/20 hover:text-zinc-100"
+            }`}
+          >
+            {needsReview ? "Recortar a mano" : "Abrir editor"}
+          </Link>
+        )}
 
         {completed && (
           <button
@@ -127,7 +156,7 @@ export function ProjectCard({ project, onChanged }: Props) {
           </button>
         )}
 
-        {(failed || completed) && reprocessButton}
+        {(failed || completed || needsReview) && reprocessButton}
       </div>
 
       {/* Se monta solo al desplegar: así no se piden los clips de cada

@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import Float, Index, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from clipforge.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from clipforge.db.models.enums import ProjectStatus, SourceType
+from clipforge.db.models.enums import ContentProfile, ProjectStatus, SourceType
 
 if TYPE_CHECKING:
     from clipforge.db.models.clip import ClipCandidate
@@ -45,6 +46,21 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Id de la tarea Celery en curso, para poder cancelar o inspeccionar.
     task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    #: Tipo de contenido detectado tras transcribir. Decide rubrica y duraciones.
+    content_profile: Mapped[ContentProfile | None] = mapped_column(
+        SAEnum(ContentProfile, native_enum=False, length=16, name="content_profile"),
+        nullable=True,
+    )
+    #: Fraccion del video con habla real. Es el dato que decide el perfil, y el
+    #: que explica por que un video se ha tratado como visual.
+    speech_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    #: Senales no verbales del video (energia, cortes, movimiento y bloques).
+    #: Se guarda como JSONB y no en tablas propias porque es una vista derivada
+    #: —se puede recalcular con ffmpeg— que solo se consume entera: la lee el
+    #: analisis y la pinta la linea de tiempo del editor.
+    signals: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     transcript: Mapped[Transcript | None] = relationship(
         back_populates="project", cascade="all, delete-orphan", uselist=False

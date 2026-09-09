@@ -9,6 +9,21 @@ export type ProjectStatus =
   | "ANALYZING"
   | "GENERATING_CLIPS"
   | "COMPLETED"
+  | "NEEDS_REVIEW"
+  | "FAILED";
+
+/** Tipo de contenido detectado; decide la rúbrica y las duraciones. */
+export type ContentProfile = "TALKING" | "VISUAL";
+
+/** De dónde salió un candidato. */
+export type CandidateSource = "AI" | "SIGNAL" | "MANUAL";
+
+export type CandidateStatus =
+  | "PENDING"
+  | "SELECTED"
+  | "REJECTED"
+  | "RENDERING"
+  | "RENDERED"
   | "FAILED";
 
 export interface ComponentHealth {
@@ -41,6 +56,11 @@ export interface ProjectDetail extends ProjectSummary {
   author: string | null;
   /** Avance del pipeline entre 0 y 1, derivado del estado. */
   progress: number;
+  content_profile: ContentProfile | null;
+  /** Fracción del vídeo con habla real. Explica el perfil elegido. */
+  speech_ratio: number | null;
+  /** Si hay línea de tiempo de señales que pintar en el editor. */
+  has_signals: boolean;
 }
 
 export interface ClipScoreBreakdown {
@@ -57,14 +77,22 @@ export interface ClipCandidate {
   id: string;
   project_id: string;
   rank: number | null;
+  status: CandidateStatus;
+  source: CandidateSource;
   start_time: number;
   end_time: number;
+  start_segment_index: number | null;
+  end_segment_index: number | null;
   duration: number;
   title: string;
   hook: string | null;
   reason: string | null;
+  transcript_excerpt: string | null;
+  error_message: string | null;
   score: number;
-  scores: ClipScoreBreakdown;
+  /** null cuando no lo ha juzgado ningún modelo (señales o manual). */
+  scores: ClipScoreBreakdown | null;
+  clip_id: string | null;
 }
 
 export interface GeneratedClip {
@@ -94,6 +122,45 @@ export interface Page<T> {
   offset: number;
 }
 
+// ---------------------------------------------------------------- señales ---
+
+/** Punto de una curva continua: `t` en segundos, `v` el valor medido. */
+export interface SamplePoint {
+  t: number;
+  v: number;
+}
+
+/** Máximo local de volumen: un golpe, una risa, un remate musical. */
+export interface EnergyPeak {
+  t: number;
+  db: number;
+  /** Cuánto sobresale del fondo, 0..1. */
+  p: number;
+}
+
+/** Tramo candidato derivado solo de señales, sin que ninguna IA lo juzgue. */
+export interface MomentBlock {
+  start: number;
+  end: number;
+  energy: number;
+  motion: number;
+  peaks: number;
+  cut_rate: number;
+  score: number;
+}
+
+export interface SignalTimeline {
+  version: number;
+  duration: number;
+  energy: SamplePoint[];
+  peaks: EnergyPeak[];
+  cuts: number[];
+  motion: SamplePoint[];
+  blocks: MomentBlock[];
+}
+
+// ------------------------------------------------------------- etiquetas ---
+
 /** Etiquetas en castellano para cada estado del pipeline. */
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   CREATED: "Creado",
@@ -102,16 +169,52 @@ export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   ANALYZING: "Buscando mejores momentos",
   GENERATING_CLIPS: "Generando clips",
   COMPLETED: "Finalizado",
+  NEEDS_REVIEW: "Pendiente de revisar",
   FAILED: "Error",
 };
 
-/** Etiquetas de cada dimensión de la puntuación, con su máximo. */
-export const SCORE_LABELS: Array<[keyof ClipScoreBreakdown, string, number]> = [
-  ["hook", "Gancho", 20],
-  ["curiosity", "Curiosidad", 20],
-  ["emotion", "Emoción", 15],
-  ["clarity", "Claridad", 15],
-  ["value", "Valor", 15],
-  ["shareability", "Compartir", 10],
-  ["duration", "Duración", 5],
-];
+export const CANDIDATE_STATUS_LABELS: Record<CandidateStatus, string> = {
+  PENDING: "Sin generar",
+  SELECTED: "En cola",
+  REJECTED: "Descartado",
+  RENDERING: "Generando",
+  RENDERED: "Listo",
+  FAILED: "Error",
+};
+
+export const CANDIDATE_SOURCE_LABELS: Record<CandidateSource, string> = {
+  AI: "IA",
+  SIGNAL: "Señal",
+  MANUAL: "Manual",
+};
+
+/**
+ * Etiquetas de cada dimensión de la puntuación, con su máximo.
+ *
+ * Las columnas de la base de datos son siempre las mismas siete, pero lo que
+ * guardan depende del perfil: en un vídeo visual la columna `curiosity` no mide
+ * curiosidad sino la fuerza del remate. Etiquetarlas con el nombre equivocado
+ * haría que el desglose no se pudiera leer.
+ */
+export const SCORE_LABELS: Record<
+  ContentProfile,
+  Array<[keyof ClipScoreBreakdown, string, number]>
+> = {
+  TALKING: [
+    ["hook", "Gancho", 20],
+    ["curiosity", "Curiosidad", 20],
+    ["emotion", "Emoción", 15],
+    ["clarity", "Claridad", 15],
+    ["value", "Valor", 15],
+    ["shareability", "Compartir", 10],
+    ["duration", "Duración", 5],
+  ],
+  VISUAL: [
+    ["hook", "Premisa", 20],
+    ["curiosity", "Remate", 25],
+    ["emotion", "Reacción", 15],
+    ["clarity", "Universal", 15],
+    ["value", "Ritmo", 15],
+    ["duration", "Duración", 10],
+  ],
+};

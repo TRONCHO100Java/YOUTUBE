@@ -117,7 +117,9 @@ class FasterWhisperTranscriber(Transcriber):
             return model
 
     # ------------------------------------------------------------ transcripción
-    def transcribe(self, audio_path: Path, *, language: str | None = None) -> TranscriptionResult:
+    def transcribe(
+        self, audio_path: Path, *, language: str | None = None, task: str | None = None
+    ) -> TranscriptionResult:
         if not audio_path.is_file():
             raise ExternalToolError(f"No existe el audio a transcribir: {audio_path}")
 
@@ -128,11 +130,20 @@ class FasterWhisperTranscriber(Transcriber):
             raw_segments, info = model.transcribe(
                 str(audio_path),
                 language=language or settings.whisper_language,
+                # "translate" devuelve inglés sea cual sea el idioma original.
+                # Sobre un vídeo en bengalí o hindi es la diferencia entre que
+                # el LLM razone sobre lo que se dice y que reciba caracteres
+                # que no sabe leer.
+                task=task or settings.whisper_task,
                 beam_size=settings.whisper_beam_size,
                 word_timestamps=settings.whisper_word_timestamps,
                 # El VAD descarta silencios y música: acelera mucho y evita que
                 # el modelo alucine texto en los tramos sin voz.
                 vad_filter=settings.whisper_vad_filter,
+                # Sin esto Whisper arrastra su propia salida como contexto y
+                # entra en bucle sobre música o ruido, repitiendo la misma
+                # sílaba durante minutos.
+                condition_on_previous_text=settings.whisper_condition_on_previous_text,
             )
             # faster-whisper devuelve un generador perezoso: la transcripción
             # real ocurre al consumirlo.

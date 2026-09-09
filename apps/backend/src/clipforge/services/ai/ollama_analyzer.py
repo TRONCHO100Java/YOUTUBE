@@ -21,10 +21,11 @@ from clipforge.services.ai.base import (
     ClipAnalyzer,
     ClipSuggestion,
 )
+from clipforge.services.ai.profiles import ProfileRules, rules_for
 from clipforge.services.ai.prompts import build_system_prompt, build_user_prompt
 from clipforge.services.ai.resolver import resolve_candidates
 from clipforge.services.ai.schema import (
-    RawClipCandidate,
+    RawCandidateBase,
     parse_analysis,
     response_json_schema,
 )
@@ -56,12 +57,13 @@ class OllamaClipAnalyzer(ClipAnalyzer):
         una ventana entera por eso deja fuera del análisis varios minutos de
         vídeo.
         """
+        rules = rules_for(context.profile)
         attempts = max(1, settings.ai_max_retries)
         last_error: ExternalToolError | None = None
 
         for attempt in range(1, attempts + 1):
             try:
-                raw_candidates = self._request_candidates(window, context)
+                raw_candidates = self._request_candidates(window, context, rules)
             except ExternalToolError as exc:
                 last_error = exc
                 if attempt < attempts:
@@ -82,20 +84,20 @@ class OllamaClipAnalyzer(ClipAnalyzer):
                 proposed=len(raw_candidates),
                 attempts=attempt,
             )
-            return resolve_candidates(raw_candidates, window)
+            return resolve_candidates(raw_candidates, window, rules)
 
         assert last_error is not None
         raise last_error
 
     def _request_candidates(
-        self, window: AnalysisWindow, context: AnalysisContext
-    ) -> list[RawClipCandidate]:
+        self, window: AnalysisWindow, context: AnalysisContext, rules: ProfileRules
+    ) -> list[RawCandidateBase]:
         payload: dict[str, Any] = {
             "model": self.model,
             "stream": False,
-            "format": response_json_schema(),
+            "format": response_json_schema(rules),
             "messages": [
-                {"role": "system", "content": build_system_prompt()},
+                {"role": "system", "content": build_system_prompt(rules)},
                 {"role": "user", "content": build_user_prompt(window, context)},
             ],
             "options": {
@@ -132,4 +134,4 @@ class OllamaClipAnalyzer(ClipAnalyzer):
         if not content:
             raise ExternalToolError("Ollama ha devuelto una respuesta vacía")
 
-        return parse_analysis(content)
+        return parse_analysis(content, rules)

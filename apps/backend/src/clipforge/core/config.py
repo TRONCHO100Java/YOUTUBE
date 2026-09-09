@@ -15,6 +15,9 @@ from clipforge.core.paths import REPO_ROOT
 # vive en los tests, que es donde tiene sentido.
 AIProvider = Literal["ollama", "openai", "anthropic"]
 LogFormat = Literal["console", "json"]
+# "auto" decide por proyecto a partir de cuánta habla real trae la transcripción.
+ContentProfileSetting = Literal["auto", "talking", "visual"]
+WhisperTask = Literal["transcribe", "translate"]
 
 
 class Settings(BaseSettings):
@@ -100,6 +103,13 @@ class Settings(BaseSettings):
     # El VAD descarta silencios y música: acelera la transcripción y evita
     # que el modelo alucine texto en los tramos sin voz.
     whisper_vad_filter: bool = True
+    # "translate" devuelve el texto en inglés sea cual sea el idioma original.
+    # Sobre un vídeo en bengalí o hindi es la diferencia entre que el LLM pueda
+    # razonar sobre lo que se dice y que reciba caracteres que no entiende.
+    whisper_task: WhisperTask = "transcribe"
+    # Sin esto, Whisper arrastra el texto anterior como contexto y entra en
+    # bucles de alucinación sobre música o ruido ("롱 롱 롱 롱").
+    whisper_condition_on_previous_text: bool = False
 
     # ------------------------------------------------------------------- ia
     ai_provider: AIProvider = "ollama"
@@ -109,15 +119,60 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ai_max_retries: int = 3
     ai_request_timeout_seconds: int = 120
+    # Modelo con visión, para los vídeos que no se pueden juzgar por su texto.
+    # Vacío = mismo proveedor que `ai_provider`.
+    ai_vision_provider: AIProvider | None = None
+    ai_vision_model: str = "qwen2.5vl:7b"
+    ai_vision_enabled: bool = True
+    #: Fotogramas que se le enseñan al modelo por cada bloque candidato.
+    vision_frames_per_block: int = 5
+    #: Tope de bloques que se envían a analizar, del mejor puntuado hacia abajo.
+    vision_max_blocks: int = 15
+    #: Bloques por petición. Uno, a propósito: con tres en el mismo mensaje, un
+    #: modelo local de 7B deja de distinguirlos y devuelve el mismo título y la
+    #: misma nota para los tres. Con uno solo describe la escena concreta.
+    #: Súbelo solo si usas un modelo grande, donde agrupar sale más barato.
+    vision_blocks_per_request: int = 1
+
+    # ------------------------------------------------------- perfil de contenido
+    content_profile: ContentProfileSetting = "auto"
+    #: Por debajo de esta fracción de habla, el vídeo se trata como visual.
+    visual_speech_ratio: float = 0.25
+    #: Segundo criterio: densidad de texto. Una transcripción de tres palabras
+    #: puede tener un ratio alto si el vídeo es muy corto.
+    visual_chars_per_minute: float = 200.0
+    #: Por debajo de esto la transcripción se considera alucinada y se descarta
+    #: en lugar de pasársela al analizador.
+    min_usable_speech_ratio: float = 0.02
 
     # ---------------------------------------------------------------- clips
     max_clips_per_project: int = 5
     min_clip_duration: int = 20
     max_clip_duration: int = 90
     target_clip_duration: int = 45
+    # Duraciones del perfil visual: un gag se agota antes que una explicación.
+    visual_min_clip_duration: int = 10
+    visual_max_clip_duration: int = 60
+    visual_target_clip_duration: int = 25
     analysis_chunk_seconds: int = 300
     analysis_chunk_overlap_seconds: int = 60
     burn_subtitles: bool = True
+
+    # -------------------------------------------------------------- señales
+    #: Las señales alimentan el análisis visual Y la línea de tiempo del
+    #: editor manual, así que se miden en todos los proyectos. Sobre un
+    #: vídeo de nueve minutos cuestan unos diecisiete segundos.
+    signals_enabled: bool = True
+    #: Resolución temporal de la curva de energía, en segundos.
+    signal_energy_interval_seconds: float = 0.5
+    #: Umbral de `select='gt(scene,N)'`. Más bajo detecta más cortes y más
+    #: falsos positivos; 0,35 funciona bien en material de YouTube.
+    signal_scene_threshold: float = 0.35
+    #: Separación mínima entre picos de volumen: colapsa las ráfagas.
+    signal_peak_min_gap_seconds: float = 8.0
+    #: La curva de movimiento cuesta como la de cortes. Desactívala si el
+    #: worker va justo de CPU.
+    signal_measure_motion: bool = True
 
     # --------------------------------------------------------------- worker
     celery_task_time_limit: int = 3 * 60 * 60

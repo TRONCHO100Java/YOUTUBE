@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from clipforge.core.config import settings
 from clipforge.core.errors import ExternalToolError
-from clipforge.services.ai.base import ClipAnalyzer
+from clipforge.services.ai.base import BlockAnalyzer, ClipAnalyzer
 
 
 def get_analyzer(provider: str | None = None, model: str | None = None) -> ClipAnalyzer:
@@ -39,3 +39,17 @@ def get_analyzer(provider: str | None = None, model: str | None = None) -> ClipA
         f"Proveedor de IA desconocido: '{name}'",
         details={"supported": ["ollama", "openai", "anthropic"]},
     )
+
+
+def get_block_analyzer(provider: str | None = None, model: str | None = None) -> BlockAnalyzer:
+    """Construye el analizador visual configurado.
+
+    Vive junto al de texto porque la decisión es la misma —qué proveedor
+    hablar— aunque el contrato sea distinto.
+
+    Raises:
+        ExternalToolError: si el proveedor no existe o le falta configuración.
+    """
+    from clipforge.services.ai.vision_analyzer import VisionClipAnalyzer
+
+    return VisionClipAnalyzer(provider=provider, model=model)

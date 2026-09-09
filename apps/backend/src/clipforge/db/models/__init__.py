@@ -8,7 +8,9 @@ from clipforge.db.base import Base
 from clipforge.db.models.clip import ClipCandidate, GeneratedClip
 from clipforge.db.models.enums import (
     PIPELINE_ORDER,
+    CandidateSource,
     CandidateStatus,
+    ContentProfile,
     ProjectStatus,
     SourceType,
 )
@@ -18,8 +20,10 @@ from clipforge.db.models.transcript import Transcript, TranscriptSegment
 __all__ = [
     "PIPELINE_ORDER",
     "Base",
+    "CandidateSource",
     "CandidateStatus",
     "ClipCandidate",
+    "ContentProfile",
     "GeneratedClip",
     "Project",
     "ProjectStatus",

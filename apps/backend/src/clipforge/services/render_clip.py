@@ -1,0 +1,170 @@
+"""Render de un candidato suelto, sin depender del pipeline completo.
+
+Antes, renderizar solo ocurría dentro de `process_project`: para conseguir un
+MP4 había que volver a pasar por descarga, transcripción y análisis. Eso hacía
+imposible que el usuario recortara un clip a mano, y también reintentar un
+único clip fallido sin rehacer el proyecto entero.
+
+Aquí no se toca la base de datos, igual que en el resto de `services/`: la
+capa que sabe de SQL es el worker. Esto recibe rutas y números y devuelve un
+fichero.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
+
+from clipforge.core.config import settings
+from clipforge.core.errors import ExternalToolError
+from clipforge.core.logging import get_logger
+from clipforge.core.storage import ProjectStorage, StorageArea
+from clipforge.services.subtitles import SourceSegment, build_cues, write_ass, write_srt
+from clipforge.services.video.crop import CropWindow, center_crop_within
+from clipforge.services.video.encoder import EncoderProfile, resolve_encoder
+from clipforge.services.video.letterbox import detect_content_window
+from clipforge.services.video.probe import probe_video
+from clipforge.services.video.render import render_vertical_clip
+
+logger = get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class ClipRenderPlan:
+    """Lo mínimo que identifica un clip a generar."""
+
+    candidate_id: uuid.UUID
+    rank: int
+    start: float
+    end: float
+
+    @property
+    def stem(self) -> str:
+        """Nombre base del fichero. Lleva el rango para que dos versiones de un
+        mismo candidato no se pisen: al mover la entrada o la salida en el
+        editor, el clip anterior sigue reproduciéndose mientras se genera el nuevo.
+        """
+        return f"clip_{self.rank:02d}_{self.candidate_id.hex[:8]}"
+
+
+@dataclass(frozen=True, slots=True)
+class RenderSetup:
+    """Lo que se calcula una vez por proyecto y se reutiliza en cada clip.
+
+    La comprobación de NVENC cuesta cerca de un segundo y la detección de
+    letterbox analiza fotogramas: hacerlo por clip multiplicaría el tiempo de
+    render sin cambiar el resultado.
+    """
+
+    source: Path
+    storage: ProjectStorage
+    segments: list[SourceSegment]
+    encoder: EncoderProfile
+    crop: CropWindow
+    burn_subtitles: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RenderedClip:
+    """Resultado del render, listo para que el worker lo guarde."""
+
+    path: Path
+    subtitle_path: Path | None
+    duration: float
+    width: int
+    height: int
+    filesize_bytes: int
+    has_burned_subtitles: bool
+    encoder: str
+    cues: int
+
+
+def build_setup(
+    project_id: uuid.UUID,
+    source: Path,
+    segments: list[SourceSegment],
+    *,
+    burn_subtitles: bool,
+    sample_at: float = 0.0,
+) -> RenderSetup:
+    """Prepara encoder y encuadre para todos los clips de un proyecto.
+
+    Raises:
+        ExternalToolError: si el vídeo de origen no existe o ffprobe falla.
+    """
+    if not source.is_file():
+        raise ExternalToolError(f"No existe el vídeo de origen: {source}")
+
+    encoder = resolve_encoder()
+    probed = probe_video(source)
+    content = detect_content_window(source, probed.width, probed.height, start=sample_at)
+    crop = center_crop_within(content, settings.output_width, settings.output_height)
+
+    logger.info(
+        "render.setup_ready",
+        encoder=encoder.name,
+        source=f"{probed.width}x{probed.height}",
+        crop=crop.to_filter(),
+        burn_subtitles=burn_subtitles,
+    )
+    return RenderSetup(
+        source=source,
+        storage=ProjectStorage(project_id),
+        segments=segments,
+        encoder=encoder,
+        crop=crop,
+        burn_subtitles=burn_subtitles,
+    )
+
+
+def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
+    """Genera el .srt y el .mp4 de un candidato.
+
+    Raises:
+        ExternalToolError: si el rango es inválido o ffmpeg falla.
+    """
+    cues = build_cues(setup.segments, plan.start, plan.end)
+
+    # Dos ficheros con el mismo contenido y distinto propósito: el .srt es el
+    # que se entrega para publicar el clip, el .ass es el que se incrusta.
+    subtitle_path = (
+        write_srt(cues, setup.storage.path_for(StorageArea.SUBTITLES, f"{plan.stem}.srt"))
+        if cues
+        else None
+    )
+    burn_path = (
+        write_ass(
+            cues,
+            setup.storage.path_for(StorageArea.TEMP, f"{plan.stem}.ass"),
+            settings.output_width,
+            settings.output_height,
+        )
+        if cues and setup.burn_subtitles
+        else None
+    )
+
+    result = render_vertical_clip(
+        setup.source,
+        setup.storage.path_for(StorageArea.CLIPS, f"{plan.stem}.mp4"),
+        start=plan.start,
+        end=plan.end,
+        # Sin subtítulos quemados el .srt sigue quedando en disco, para poder
+        # publicar el clip limpio y subirlos aparte.
+        subtitles=burn_path,
+        crop=setup.crop,
+        encoder=setup.encoder,
+    )
+    setup.storage.assert_within_root(result.path)
+
+    return RenderedClip(
+        path=result.path,
+        subtitle_path=subtitle_path,
+        duration=result.duration,
+        width=result.width,
+        height=result.height,
+        filesize_bytes=result.filesize_bytes,
+        has_burned_subtitles=result.has_burned_subtitles,
+        encoder=result.encoder,
+        cues=len(cues),
+    )

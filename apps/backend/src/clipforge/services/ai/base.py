@@ -12,7 +12,15 @@ imposible que se invente un instante que no existe en la transcripción.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from clipforge.db.models.enums import CandidateSource, ContentProfile
+
+if TYPE_CHECKING:
+    from clipforge.services.signals.base import MomentBlock
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,17 +94,28 @@ class ClipScores:
 
 @dataclass(frozen=True, slots=True)
 class ClipSuggestion:
-    """Momento propuesto por el modelo, ya validado contra segmentos reales."""
+    """Momento propuesto por el modelo, ya validado contra tiempos reales.
 
-    start_segment: int
-    end_segment: int
+    Los índices de segmento son opcionales: un candidato salido del análisis
+    visual se apoya en un bloque de fotogramas, no en la transcripción, y no
+    tiene ningún segmento al que referirse.
+    """
+
+    start_segment: int | None
+    end_segment: int | None
     start_time: float
     end_time: float
     title: str
     hook: str | None
     reason: str | None
-    scores: ClipScores
+    #: Desglose de la rúbrica. Es None en un candidato salido solo de señales:
+    #: ahí no hay ninguna dimensión que puntuar, y rellenar el desglose con
+    #: ceros haría creer que un modelo lo ha valorado y le ha dado cero.
+    scores: ClipScores | None
     transcript_excerpt: str | None = None
+    source: CandidateSource = CandidateSource.AI
+    #: Puntuación directa, para los candidatos que no tienen desglose.
+    signal_score: float | None = None
 
     @property
     def duration(self) -> float:
@@ -104,7 +123,15 @@ class ClipSuggestion:
 
     @property
     def score(self) -> float:
-        return self.scores.total
+        """Nota 0-100, venga del desglose de la rúbrica o de las señales."""
+        if self.scores is not None:
+            return self.scores.total
+        return round(max(0.0, min(100.0, self.signal_score or 0.0)), 2)
+
+    @property
+    def hook_score(self) -> float:
+        """Fuerza del gancho, para desempatar en el ranking."""
+        return self.scores.hook if self.scores is not None else 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +141,9 @@ class AnalysisContext:
     title: str | None = None
     author: str | None = None
     language: str | None = None
+    #: Decide rúbrica y duraciones. Lo fija el pipeline tras transcribir.
+    profile: ContentProfile = ContentProfile.TALKING
+    duration: float | None = None
     extra: dict[str, str] = field(default_factory=dict)
 
 
@@ -128,6 +158,35 @@ class ClipAnalyzer(ABC):
         self, window: AnalysisWindow, context: AnalysisContext
     ) -> list[ClipSuggestion]:
         """Analiza una ventana y devuelve sus mejores momentos.
+
+        Raises:
+            ExternalToolError: si el proveedor falla o responde algo inusable.
+        """
+
+
+class BlockAnalyzer(ABC):
+    """Propone momentos a partir de fotogramas, sin transcripción.
+
+    Es el contrato paralelo a `ClipAnalyzer` para los vídeos que no se pueden
+    juzgar por lo que dicen. Se mantiene aparte en lugar de ampliar el otro
+    porque las dos modalidades reciben cosas distintas —segmentos frente a
+    bloques de imágenes— y mezclarlas obligaría a que cada implementación
+    ignorase la mitad de sus argumentos.
+    """
+
+    #: Nombre del proveedor, para logs y trazabilidad.
+    provider: str = "unknown"
+
+    @abstractmethod
+    def analyze_blocks(
+        self,
+        blocks: Sequence[MomentBlock],
+        context: AnalysisContext,
+        *,
+        video_path: Path,
+        workdir: Path,
+    ) -> list[ClipSuggestion]:
+        """Analiza bloques del vídeo y devuelve sus mejores momentos.
 
         Raises:
             ExternalToolError: si el proveedor falla o responde algo inusable.

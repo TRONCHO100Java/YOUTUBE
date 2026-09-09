@@ -11,6 +11,7 @@ from clipforge.services.ai.base import (
     ClipAnalyzer,
     ClipSuggestion,
 )
+from clipforge.services.ai.profiles import rules_for
 from clipforge.services.ai.prompts import build_system_prompt, build_user_prompt
 from clipforge.services.ai.resolver import resolve_candidates
 from clipforge.services.ai.schema import parse_analysis, response_json_schema
@@ -44,6 +45,7 @@ class AnthropicClipAnalyzer(ClipAnalyzer):
     def analyze_window(
         self, window: AnalysisWindow, context: AnalysisContext
     ) -> list[ClipSuggestion]:
+        rules = rules_for(context.profile)
         import anthropic
 
         client = anthropic.Anthropic(
@@ -56,9 +58,11 @@ class AnthropicClipAnalyzer(ClipAnalyzer):
             message = client.messages.create(
                 model=self.model,
                 max_tokens=MAX_TOKENS,
-                system=build_system_prompt(),
+                system=build_system_prompt(rules),
                 messages=[{"role": "user", "content": build_user_prompt(window, context)}],
-                output_config={"format": {"type": "json_schema", "schema": response_json_schema()}},
+                output_config={
+                    "format": {"type": "json_schema", "schema": response_json_schema(rules)}
+                },
             )
         except anthropic.APIError as exc:
             raise ExternalToolError(
@@ -76,7 +80,7 @@ class AnthropicClipAnalyzer(ClipAnalyzer):
         if not content:
             raise ExternalToolError("Anthropic ha devuelto una respuesta vacía")
 
-        raw_candidates = parse_analysis(content)
+        raw_candidates = parse_analysis(content, rules)
         logger.info(
             "ai.window_analyzed",
             provider=self.provider,
@@ -84,4 +88,4 @@ class AnthropicClipAnalyzer(ClipAnalyzer):
             window=window.number,
             proposed=len(raw_candidates),
         )
-        return resolve_candidates(raw_candidates, window)
+        return resolve_candidates(raw_candidates, window, rules)

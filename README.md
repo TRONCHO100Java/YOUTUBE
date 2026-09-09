@@ -127,9 +127,11 @@ npm run build
 │  │  │  ├─ api/                app FastAPI, routers, schemas, dependencias
 │  │  │  ├─ repositories/       acceso a datos
 │  │  │  ├─ services/           source/ (URLs), download/ (yt-dlp),
-│  │  │  │                      transcribe/ (Whisper), ai/ (LLM),
-│  │  │  │                      video/ (ffmpeg: encoder, crop, letterbox, render),
-│  │  │  │                      subtitles/ (.srt y .ass)
+│  │  │  │                      transcribe/ (Whisper), ai/ (LLM y visión),
+│  │  │  │                      signals/ (volumen, cortes de plano, movimiento),
+│  │  │  │                      video/ (ffmpeg: encoder, crop, letterbox,
+│  │  │  │                      fotogramas, render), subtitles/ (.srt y .ass),
+│  │  │  │                      render_clip.py (render de un clip suelto)
 │  │  │  └─ worker/             Celery: app y tareas
 │  │  └─ tests/
 │  └─ web/                      Next.js 16 + TypeScript strict + Tailwind 4
@@ -161,12 +163,19 @@ pesado (Whisper y FFmpeg).
 | `GET` | `/api/projects/{id}` | Detalle, con `progress` para la barra de estado |
 | `GET` | `/api/projects/{id}/transcript` | Transcripción con segmentos (`?include_words=true` añade los tiempos por palabra) |
 | `GET` | `/api/projects/{id}/candidates` | Momentos detectados, con su desglose de puntuación |
+| `POST` | `/api/projects/{id}/candidates` | Crea un clip recortado a mano (`start_time`, `end_time`, `title`) |
+| `GET` | `/api/projects/{id}/signals` | Curva de volumen, cortes de plano, movimiento y bloques candidatos |
+| `GET` | `/api/projects/{id}/source` | El vídeo original. Admite `Range`, para poder recortarlo en el navegador |
 | `POST` | `/api/projects/{id}/retry` | Reprocesa un proyecto terminado o fallido |
 | `DELETE` | `/api/projects/{id}` | Borra el proyecto y sus ficheros en disco |
 | `GET` | `/api/projects/{id}/clips` | Clips renderizados, con resolución, peso y encoder usado |
 | `GET` | `/api/clips/{id}` | Detalle de un clip |
 | `GET` | `/api/clips/{id}/video` | El MP4. Admite `Range`, así que el `<video>` puede buscar sin descargarlo entero |
 | `GET` | `/api/clips/{id}/subtitles` | El `.srt` como fichero aparte |
+| `GET` | `/api/candidates/{id}` | Detalle de un candidato |
+| `PATCH` | `/api/candidates/{id}` | Ajusta entrada, salida, título o estado |
+| `POST` | `/api/candidates/{id}/render` | Encola el render de ese único clip |
+| `DELETE` | `/api/candidates/{id}` | Borra el candidato y su clip |
 | `GET` | `/health`, `/health/ready` | Liveness y readiness |
 
 El navegador solo ve las cabeceras de respuesta que CORS le expone explícitamente. Sin
@@ -401,7 +410,7 @@ fotogramas con `cropdetect`, se queda con la propuesta más repetida y la descar
 recortar más de la mitad del área — ante la duda, no recortar. El recorte 9:16 se calcula
 después *dentro* de esa ventana de contenido.
 
-El encuadre es de momento un centrado. La FASE 6 sustituirá el cálculo por una ventana
+El encuadre es de momento un centrado. La FASE 13 sustituirá el cálculo por una ventana
 guiada por la cara detectada; el resto de la cadena no cambia, porque `render_vertical_clip`
 ya recibe la ventana como parámetro.
 
@@ -422,7 +431,80 @@ cada valor del estilo es un píxel del clip final.
 BURN_SUBTITLES=true          # false deja el clip limpio; el .srt se genera igual
 ```
 
-## 12. Almacenamiento
+## 12. Vídeos que no hablan
+
+El análisis de la sección anterior solo lee texto, y hay vídeos que no lo tienen. Sobre una
+recopilación de comedia física de 8:39, Whisper detectó "coreano" con un 47 % de confianza y
+produjo **tres segmentos y quince caracteres** — ninguno era habla real. El analizador no
+podía devolver otra cosa que una lista vacía, y el proyecto acababa en `FAILED` tras
+descargar 379 MB.
+
+Ahora el pipeline mide tres señales que no dependen del idioma:
+
+| Señal | Cómo | Qué marca |
+|---|---|---|
+| Volumen | `astats` sobre el WAV, RMS cada 0,5 s | Golpes, caídas, risas, acentos musicales |
+| Cortes de plano | `select='gt(scene,0.35)'` a 320 px | Dónde empieza y acaba cada sketch |
+| Movimiento | `tblend=difference` + `signalstats` a 4 fps | Acción física |
+
+Sobre ese mismo vídeo, 35 segundos de ffmpeg: 30 picos de sonido, 36 cortes y 20 tramos
+publicables donde el texto daba cero. Se guardan como JSONB en `projects.signals` (unos
+50 kB) y los consumen tanto el análisis como la línea de tiempo del editor.
+
+### Perfil de contenido
+
+Tras transcribir se calcula la fracción del vídeo con habla real. Con menos de
+`VISUAL_SPEECH_RATIO` (o menos de `VISUAL_CHARS_PER_MINUTE` caracteres por minuto) el
+proyecto pasa al perfil **visual**, que cambia tres cosas:
+
+- **Rúbrica.** `setup` 20, `payoff` 25, `reaction` 15, `universality` 15, `pacing` 15,
+  `duration` 10. No pide citas textuales ni premia "enseñar algo", que es lo que dejaba a
+  un gag visual con cero en la mitad del baremo.
+- **Duraciones.** 10–60 s con óptimo en 25, en lugar de 20–90 con óptimo en 45.
+- **Subtítulos.** No se incrustan: no hay nada que subtitular.
+
+Las siete columnas de puntuación de `clip_candidates` no cambian; lo que cambia es qué
+dimensión guarda cada una. Así se puede añadir una rúbrica sin migrar la base de datos.
+
+### Análisis visual
+
+Con perfil visual, de cada bloque se extraen `VISION_FRAMES_PER_BLOCK` fotogramas a 512 px
+y se le enseñan a un modelo multimodal, **de uno en uno**: con tres bloques en la misma
+petición un modelo local de 7B deja de distinguirlos y devuelve el mismo título para los
+tres. Se mantiene la regla de siempre — el modelo elige un bloque, el backend calcula los
+tiempos.
+
+Sobre el vídeo de referencia, con `qwen2.5vl:7b` en local: 15 peticiones, dos minutos, y
+clips titulados «El agricultor se desliza en el barro» (95/100) o «El salto del niño».
+Para calidad de verdad, `AI_VISION_PROVIDER=anthropic` con `claude-opus-5`.
+
+### Nunca terminar con las manos vacías
+
+Si el análisis no propone nada —o el proveedor falla— el proyecto **no** se marca como
+fallido. Se guardan los mejores bloques como candidatos `SIGNAL` sin puntuar, el estado
+pasa a `NEEDS_REVIEW` y el vídeo original se conserva pase lo que pase con
+`KEEP_SOURCE_VIDEO`. El editor manual hace el resto.
+
+## 13. Editor manual
+
+`/projects/{id}` abre el vídeo original con la línea de tiempo de señales debajo, en cinco
+carriles sobre el mismo eje: volumen, movimiento, cortes, tramos propuestos y clips ya
+definidos. Un clic en un tramo ajusta entrada y salida a él, que es lo que convierte diez
+minutos de arrastrar la cabeza lectora en un clic.
+
+Atajos de montador: `espacio` reproducir, `I` y `O` marcar entrada y salida, `J K L`
+lanzadera, flechas ±1 s y `shift`+flechas fotograma a fotograma.
+
+Cada clip se renderiza por separado con la tarea `clipforge.pipeline.render_candidate`, que
+comparte el código de render con el pipeline: un clip manual y uno de la IA son el mismo
+fichero con el mismo encuadre.
+
+Los límites de duración del perfil **no** se aplican a un recorte manual: son una guía para
+el modelo, no una regla para la persona que está mirando el vídeo. Y un reprocesado
+sustituye lo que produjo la máquina (`AI` y `SIGNAL`) pero nunca borra un candidato
+`MANUAL`.
+
+## 14. Almacenamiento
 
 ```
 storage/projects/{project_id}/
@@ -475,7 +557,7 @@ que arrancas: uvicorn, celery, pytest y alembic se lanzan desde sitios distintos
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 
-## 13. Migraciones
+## 15. Migraciones
 
 ```powershell
 cd apps\backend
@@ -486,12 +568,18 @@ cd apps\backend
 
 Revisa siempre el fichero generado antes de aplicarlo.
 
-## 14. Hoja de ruta
+## 16. Hoja de ruta
 
 - [x] **FASE 1** — infraestructura, API, BD, worker, frontend
 - [x] **FASE 2** — descarga con yt-dlp y creación de proyectos
 - [x] **FASE 3** — transcripción con faster-whisper sobre CUDA
 - [x] **FASE 4** — análisis de viralidad con LLM
 - [x] **FASE 5** — recorte y render vertical con FFmpeg/NVENC
-- [ ] **FASE 6** — smart crop con detección de caras
-- [ ] **FASE 7** — frontend completo con progreso y descarga
+- [x] **FASE 6** — el análisis vacío ya no tira el proyecto: `NEEDS_REVIEW`
+- [x] **FASE 7** — señales no verbales (volumen, cortes de plano, movimiento)
+- [x] **FASE 8** — perfiles de contenido con rúbrica y duraciones propias
+- [x] **FASE 9** — análisis visual con modelo multimodal
+- [x] **FASE 10** — Whisper con traducción y guarda contra alucinaciones
+- [x] **FASE 11** — candidatos manuales y render de un clip suelto
+- [x] **FASE 12** — editor con línea de tiempo de señales
+- [ ] **FASE 13** — smart crop con detección de caras

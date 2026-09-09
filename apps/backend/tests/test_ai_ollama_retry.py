@@ -11,9 +11,11 @@ import pytest
 
 from clipforge.core.config import settings
 from clipforge.core.errors import ExternalToolError
+from clipforge.db.models.enums import ContentProfile
 from clipforge.services.ai.base import AnalysisContext, AnalysisSegment, AnalysisWindow
 from clipforge.services.ai.ollama_analyzer import OllamaClipAnalyzer
-from clipforge.services.ai.schema import RawClipCandidate
+from clipforge.services.ai.profiles import rules_for
+from clipforge.services.ai.schema import candidate_model
 
 CONTEXT = AnalysisContext(language="es")
 
@@ -35,8 +37,8 @@ def fast_and_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "max_clip_duration", 90)
 
 
-def _candidate() -> RawClipCandidate:
-    return RawClipCandidate.model_validate(
+def _candidate():  # type: ignore[no-untyped-def]
+    return candidate_model(rules_for(ContentProfile.TALKING)).model_validate(
         {
             "start_segment": 0,
             "end_segment": 4,
@@ -61,7 +63,7 @@ class _Attempts:
         self.failures = failures
         self.calls = 0
 
-    def __call__(self, window: AnalysisWindow, context: AnalysisContext) -> list[RawClipCandidate]:
+    def __call__(self, window: AnalysisWindow, context: AnalysisContext, rules: object):  # type: ignore[no-untyped-def]
         self.calls += 1
         if self.calls <= self.failures:
             raise ExternalToolError("La IA no ha devuelto JSON válido")

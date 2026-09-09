@@ -11,6 +11,7 @@ from clipforge.services.ai.base import (
     ClipAnalyzer,
     ClipSuggestion,
 )
+from clipforge.services.ai.profiles import rules_for
 from clipforge.services.ai.prompts import build_system_prompt, build_user_prompt
 from clipforge.services.ai.resolver import resolve_candidates
 from clipforge.services.ai.schema import parse_analysis, response_json_schema
@@ -33,6 +34,7 @@ class OpenAIClipAnalyzer(ClipAnalyzer):
     def analyze_window(
         self, window: AnalysisWindow, context: AnalysisContext
     ) -> list[ClipSuggestion]:
+        rules = rules_for(context.profile)
         from openai import OpenAI, OpenAIError
 
         client = OpenAI(
@@ -46,7 +48,7 @@ class OpenAIClipAnalyzer(ClipAnalyzer):
                 model=self.model,
                 temperature=0,
                 messages=[
-                    {"role": "system", "content": build_system_prompt()},
+                    {"role": "system", "content": build_system_prompt(rules)},
                     {"role": "user", "content": build_user_prompt(window, context)},
                 ],
                 response_format={
@@ -56,7 +58,7 @@ class OpenAIClipAnalyzer(ClipAnalyzer):
                         # strict garantiza que la respuesta cumple el esquema:
                         # sin esto habría que tolerar campos ausentes.
                         "strict": True,
-                        "schema": response_json_schema(),
+                        "schema": response_json_schema(rules),
                     },
                 },
             )
@@ -69,7 +71,7 @@ class OpenAIClipAnalyzer(ClipAnalyzer):
         if not content:
             raise ExternalToolError("OpenAI ha devuelto una respuesta vacía")
 
-        raw_candidates = parse_analysis(content)
+        raw_candidates = parse_analysis(content, rules)
         logger.info(
             "ai.window_analyzed",
             provider=self.provider,
@@ -77,4 +79,4 @@ class OpenAIClipAnalyzer(ClipAnalyzer):
             window=window.number,
             proposed=len(raw_candidates),
         )
-        return resolve_candidates(raw_candidates, window)
+        return resolve_candidates(raw_candidates, window, rules)
