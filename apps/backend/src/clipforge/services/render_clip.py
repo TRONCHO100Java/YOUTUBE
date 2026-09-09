@@ -20,7 +20,13 @@ from clipforge.core.config import settings
 from clipforge.core.errors import ExternalToolError
 from clipforge.core.logging import get_logger
 from clipforge.core.storage import ProjectStorage, StorageArea
-from clipforge.services.subtitles import SourceSegment, build_cues, write_ass, write_srt
+from clipforge.services.subtitles import (
+    HookStyle,
+    SourceSegment,
+    build_cues,
+    write_ass,
+    write_srt,
+)
 from clipforge.services.video.crop import CropWindow, center_crop_within
 from clipforge.services.video.encoder import EncoderProfile, resolve_encoder
 from clipforge.services.video.framing import CropPlan, build_track, plan_crop
@@ -39,6 +45,9 @@ class ClipRenderPlan:
     rank: int
     start: float
     end: float
+    #: Frase que se escribe arriba en los primeros segundos. En un clip sin
+    #: diálogo es lo único escrito que lleva.
+    hook: str | None = None
 
     @property
     def stem(self) -> str:
@@ -87,6 +96,7 @@ class RenderedClip:
     has_burned_subtitles: bool
     encoder: str
     cues: int
+    has_hook: bool
 
 
 def build_setup(
@@ -172,14 +182,25 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         if cues
         else None
     )
+
+    # El gancho es independiente de los subtítulos: un clip visual no lleva
+    # subtítulos —no hay nada que subtitular— y es justo el que más necesita
+    # una frase escrita, porque si no se publica mudo y sin contexto.
+    burned_cues = cues if setup.burn_subtitles else []
+    hook = plan.hook.strip() if settings.hook_overlay and plan.hook else None
     burn_path = (
         write_ass(
-            cues,
+            burned_cues,
             setup.storage.path_for(StorageArea.TEMP, f"{plan.stem}.ass"),
             settings.output_width,
             settings.output_height,
+            hook=hook,
+            hook_seconds=settings.hook_overlay_seconds,
+            hook_style=HookStyle(
+                size=settings.hook_font_size, line_length=settings.hook_line_length
+            ),
         )
-        if cues and setup.burn_subtitles
+        if burned_cues or hook
         else None
     )
 
@@ -203,7 +224,10 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         width=result.width,
         height=result.height,
         filesize_bytes=result.filesize_bytes,
-        has_burned_subtitles=result.has_burned_subtitles,
+        # El render solo sabe que ha quemado un .ass; qué llevaba dentro lo
+        # sabemos aquí, y es lo que interesa registrar.
+        has_burned_subtitles=bool(burned_cues) and result.has_burned_subtitles,
         encoder=result.encoder,
         cues=len(cues),
+        has_hook=hook is not None,
     )

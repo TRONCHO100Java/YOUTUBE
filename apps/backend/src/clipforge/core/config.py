@@ -175,6 +175,17 @@ class Settings(BaseSettings):
     visual_min_clip_duration: int = 10
     visual_max_clip_duration: int = 60
     visual_target_clip_duration: int = 25
+    #: Escribe el gancho del clip arriba, en los primeros segundos. Es lo
+    #: único escrito que lleva un clip sin diálogo, y donde se decide si
+    #: alguien sigue mirando.
+    hook_overlay: bool = True
+    hook_overlay_seconds: float = 3.0
+    #: 100 px sobre 1920 son algo más del 5 % de la altura, que es donde
+    #: está el texto de gancho en los Shorts que funcionan. A 78 se leía,
+    #: pero no frenaba el scroll.
+    hook_font_size: int = 100
+    #: Caracteres por línea del gancho antes de partir.
+    hook_line_length: int = 22
     analysis_chunk_seconds: int = 300
     analysis_chunk_overlap_seconds: int = 60
     burn_subtitles: bool = True

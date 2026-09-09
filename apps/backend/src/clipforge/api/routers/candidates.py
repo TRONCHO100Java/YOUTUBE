@@ -37,7 +37,7 @@ async def get_candidate(candidate_id: uuid.UUID, repo: CandidateRepo) -> ClipCan
 async def update_candidate(
     candidate_id: uuid.UUID, payload: ClipCandidateUpdate, repo: CandidateRepo
 ) -> ClipCandidateRead:
-    """Mueve las marcas de un candidato sin volver a renderizarlo.
+    """Ajusta un candidato sin volver a renderizarlo.
 
     El clip que ya hubiera generado se conserva a propósito: el usuario suele
     ajustar y comparar antes de decidir, y borrarle el vídeo anterior en cada
@@ -57,6 +57,10 @@ async def update_candidate(
     candidate.end_time = end
     if payload.title is not None:
         candidate.title = payload.title.strip()
+    if payload.hook is not None:
+        # Cadena vacía = quitar el gancho. Guardar "" en lugar de NULL haría
+        # que el render escribiese una línea en blanco sobre el vídeo.
+        candidate.hook = payload.hook.strip() or None
     if payload.status is not None:
         candidate.status = payload.status
     # Los índices de segmento describían el rango anterior: al mover las marcas

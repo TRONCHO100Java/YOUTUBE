@@ -31,7 +31,12 @@ from clipforge.db.session import sync_session_scope
 from clipforge.services.ai import rules_for
 from clipforge.services.render_clip import ClipRenderPlan, build_setup
 from clipforge.worker.celery_app import celery_app
-from clipforge.worker.tasks.pipeline import render_and_store, subtitle_segments, update_candidate
+from clipforge.worker.tasks.pipeline import (
+    export_project_clips,
+    render_and_store,
+    subtitle_segments,
+    update_candidate,
+)
 
 logger = get_logger(__name__)
 
@@ -48,8 +53,12 @@ def render_candidate(self: Any, candidate_id: str) -> dict[str, Any]:
     log = logger.bind(candidate_id=candidate_id, task_id=self.request.id)
 
     try:
-        plan, setup = _prepare(cid)
+        plan, setup, project_id = _prepare(cid)
         render_and_store(plan, setup)
+        # La carpeta de exportacion es donde el usuario coge los ficheros para
+        # subirlos. Sin esto, un clip recortado a mano se generaba pero no
+        # aparecia donde se buscan los demas.
+        export_project_clips(project_id, log)
     except ClipForgeError as exc:
         log.warning("render.candidate_failed", code=exc.code, error=exc.message)
         update_candidate(cid, status=CandidateStatus.FAILED, error_message=exc.message)
@@ -69,7 +78,7 @@ def render_candidate(self: Any, candidate_id: str) -> dict[str, Any]:
     return {"candidate_id": candidate_id, "status": CandidateStatus.RENDERED}
 
 
-def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any]:
+def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any, uuid.UUID]:
     """Reúne el plan y el encuadre en una transacción corta.
 
     Raises:
@@ -92,6 +101,7 @@ def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any]:
             rank=candidate.rank or 1,
             start=candidate.start_time,
             end=candidate.end_time,
+            hook=candidate.hook,
         )
         project_id = project.id
         video_relative = project.source_video_path
@@ -106,7 +116,7 @@ def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any]:
         )
 
     setup = build_setup(project_id, source, segments, burn_subtitles=burn, sample_at=plan.start)
-    return plan, setup
+    return plan, setup, project_id
 
 
 def pending_candidate_ids(project_id: uuid.UUID) -> list[uuid.UUID]:

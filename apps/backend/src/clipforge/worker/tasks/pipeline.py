@@ -301,9 +301,18 @@ def _signals_stage(project_id: uuid.UUID, log: Any) -> None:
         video_relative = project.source_video_path
         audio_relative = project.audio_path
         duration = project.duration or 0.0
-        rules = rules_for(project.content_profile or ContentProfile.TALKING)
+        profile = project.content_profile or ContentProfile.TALKING
+        rules = rules_for(profile)
+        existing = project.signals
 
     if duration <= 0:
+        return
+
+    # Un reproceso no cambia el vídeo, así que tampoco cambian sus señales:
+    # medirlas otra vez son 35 segundos tirados. Solo se rehacen si el perfil
+    # cambió —los bloques dependen de sus duraciones— o si no las había.
+    if existing is not None and _signals_are_current(existing, duration, rules):
+        log.info("pipeline.signals_reused", blocks=len(existing.get("blocks", [])))
         return
 
     log.info("pipeline.signals_started")
@@ -320,8 +329,26 @@ def _signals_stage(project_id: uuid.UUID, log: Any) -> None:
         log.warning("pipeline.signals_failed", error=exc.message)
         return
 
-    _update(project_id, signals=timeline.to_dict())
+    payload = timeline.to_dict()
+    # El perfil se guarda con las señales para saber con qué duraciones se
+    # construyeron los bloques.
+    payload["profile"] = profile.value
+    _update(project_id, signals=payload)
     log.info("pipeline.signals_finished", blocks=len(timeline.blocks), peaks=len(timeline.peaks))
+
+
+def _signals_are_current(signals: dict[str, Any] | None, duration: float, rules: Any) -> bool:
+    """Decide si las señales guardadas siguen sirviendo.
+
+    Se comprueban las dos cosas de las que dependen: la duración del vídeo (si
+    cambia es que el fichero es otro) y el perfil (decide el tamaño de los
+    bloques). Todo lo demás es determinista sobre el mismo fichero.
+    """
+    if not signals or not signals.get("blocks"):
+        return False
+    if signals.get("profile") != rules.profile.value:
+        return False
+    return abs(float(signals.get("duration", 0.0)) - duration) < 1.0
 
 
 # ------------------------------------------------------------------- análisis IA
@@ -532,6 +559,7 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
                 rank=candidate.rank or position,
                 start=candidate.start_time,
                 end=candidate.end_time,
+                hook=candidate.hook,
             )
             for position, candidate in enumerate(candidates, start=1)
         ]
@@ -566,10 +594,10 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
         raise ClipForgeError("No se ha podido renderizar ningún clip")
 
     log.info("pipeline.render_finished", rendered=rendered, failed=len(plans) - rendered)
-    _export_stage(project_id, log)
+    export_project_clips(project_id, log)
 
 
-def _export_stage(project_id: uuid.UUID, log: Any) -> None:
+def export_project_clips(project_id: uuid.UUID, log: Any) -> None:
     """Deja una copia de los clips con nombres legibles, para subirlos a mano.
 
     Nunca tumba el pipeline: los clips ya están renderizados y registrados en

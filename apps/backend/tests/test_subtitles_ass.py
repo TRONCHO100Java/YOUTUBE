@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from clipforge.services.subtitles import SourceSegment, build_cues, render_ass, write_ass
+from clipforge.services.subtitles import (
+    SourceSegment,
+    build_cues,
+    render_ass,
+    wrap_hook,
+    write_ass,
+)
 from clipforge.services.subtitles.ass import SubtitleStyle, _escape, _timestamp
 from clipforge.services.subtitles.srt import SubtitleCue
 
@@ -93,3 +99,86 @@ def test_empty_cue_list_still_produces_a_valid_file() -> None:
 
     assert "[Events]" in content
     assert "Dialogue:" not in content
+
+
+# ------------------------------------------------------------------- gancho
+def test_the_hook_is_written_on_its_own_layer() -> None:
+    """Va en capa 1 para quedar por encima del subtítulo si coincidieran."""
+    rendered = render_ass([], 1080, 1920, hook="Mira lo que pasa")
+
+    assert "Style: Hook," in rendered
+    assert "Dialogue: 1," in rendered
+    assert "Mira lo que pasa" in rendered
+
+
+def test_the_hook_sits_at_the_top() -> None:
+    """Alignment 8. La mitad de abajo la tapan los botones de la app."""
+    rendered = render_ass([], 1080, 1920, hook="Arriba")
+
+    hook_style = next(line for line in rendered.splitlines() if line.startswith("Style: Hook,"))
+    assert hook_style.split(",")[18] == "8"
+
+
+def test_the_hook_only_covers_the_first_seconds() -> None:
+    rendered = render_ass([], 1080, 1920, hook="Corto", hook_seconds=2.5)
+
+    event = next(line for line in rendered.splitlines() if line.startswith("Dialogue: 1,"))
+    assert "0:00:00.00" in event
+    assert "0:00:02.50" in event
+
+
+def test_a_clip_without_subtitles_still_gets_its_hook() -> None:
+    """El caso que motivó todo: un clip visual no lleva subtítulos y es el que
+    más necesita una frase escrita."""
+    rendered = render_ass([], 1080, 1920, hook="Sin diálogo")
+
+    assert "Dialogue: 1," in rendered
+    assert "Dialogue: 0," not in rendered
+
+
+def test_no_hook_means_no_hook_event() -> None:
+    assert "Dialogue: 1," not in render_ass([], 1080, 1920)
+    assert "Dialogue: 1," not in render_ass([], 1080, 1920, hook="   ")
+    assert "Dialogue: 1," not in render_ass([], 1080, 1920, hook="Algo", hook_seconds=0)
+
+
+def test_the_hook_is_escaped_like_any_other_text() -> None:
+    rendered = render_ass([], 1080, 1920, hook=r"Llaves {raras} y barra \ suelta")
+
+    assert "{raras}" not in rendered
+    assert "(raras)" in rendered
+
+
+# -------------------------------------------------------------- partido en lineas
+def test_a_long_hook_is_split_into_lines() -> None:
+    wrapped = wrap_hook(
+        "Esta frase es demasiado larga para caber en una sola linea de movil",
+        line_length=22,
+        max_lines=3,
+    )
+
+    assert "\n" in wrapped
+    assert all(len(line) <= 22 for line in wrapped.split("\n"))
+
+
+def test_an_endless_hook_is_truncated_not_shrunk() -> None:
+    """Encoger la letra para que quepa todo anula el motivo de ponerla."""
+    wrapped = wrap_hook("palabra " * 60, line_length=22, max_lines=3)
+
+    assert len(wrapped.split("\n")) == 3
+    assert wrapped.endswith("…")
+
+
+def test_wrapping_collapses_stray_whitespace() -> None:
+    assert wrap_hook("  hola   mundo  ", line_length=40, max_lines=2) == "hola mundo"
+
+
+def test_an_empty_hook_wraps_to_nothing() -> None:
+    assert wrap_hook("   ", line_length=20, max_lines=2) == ""
+
+
+def test_the_hook_reaches_the_ass_as_a_line_break() -> None:
+    rendered = render_ass([], 1080, 1920, hook="Una frase larga que no cabe de ninguna manera aqui")
+
+    event = next(line for line in rendered.splitlines() if line.startswith("Dialogue: 1,"))
+    assert r"\N" in event

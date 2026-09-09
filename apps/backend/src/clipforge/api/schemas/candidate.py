@@ -145,6 +145,14 @@ class ClipCandidateUpdate(BaseModel):
     start_time: float | None = Field(None, ge=0)
     end_time: float | None = Field(None, gt=0)
     title: str | None = Field(None, min_length=1, max_length=300)
+    hook: str | None = Field(
+        None,
+        max_length=500,
+        description=(
+            "Frase que se escribe sobre el vídeo en los primeros segundos. "
+            "Cadena vacía para quitarla."
+        ),
+    )
     status: CandidateStatus | None = Field(
         None, description="Para descartar un candidato sin borrarlo (REJECTED)"
     )

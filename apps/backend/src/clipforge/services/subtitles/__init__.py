@@ -1,6 +1,12 @@
 """Generación de subtítulos para los clips."""
 
-from clipforge.services.subtitles.ass import SubtitleStyle, render_ass, write_ass
+from clipforge.services.subtitles.ass import (
+    HookStyle,
+    SubtitleStyle,
+    render_ass,
+    wrap_hook,
+    write_ass,
+)
 from clipforge.services.subtitles.srt import (
     SourceSegment,
     SubtitleCue,
@@ -10,12 +16,14 @@ from clipforge.services.subtitles.srt import (
 )
 
 __all__ = [
+    "HookStyle",
     "SourceSegment",
     "SubtitleCue",
     "SubtitleStyle",
     "build_cues",
     "render_ass",
     "render_srt",
+    "wrap_hook",
     "write_ass",
     "write_srt",
 ]

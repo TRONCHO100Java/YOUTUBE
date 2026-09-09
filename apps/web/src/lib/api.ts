@@ -176,6 +176,8 @@ export function updateCandidate(
     start_time: number;
     end_time: number;
     title: string;
+    /** Texto que se escribe sobre el vídeo. Cadena vacía lo quita. */
+    hook: string;
     status: CandidateStatus;
   }>,
 ): Promise<ClipCandidate> {

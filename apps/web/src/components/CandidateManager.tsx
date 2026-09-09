@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { InlineText } from "@/components/InlineText";
 import {
   clipSubtitlesUrl,
   clipVideoUrl,
@@ -70,13 +71,14 @@ function CandidateRow({
   onChanged: () => void;
   onPreview: (start: number, end: number) => void;
 }) {
-  const [busy, setBusy] = useState<null | "render" | "delete" | "title">(null);
+  const [busy, setBusy] = useState<null | "render" | "delete" | "title" | "hook">(null);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [draftTitle, setDraftTitle] = useState(candidate.title);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  async function run(kind: "render" | "delete" | "title", action: () => Promise<unknown>) {
+  async function run(
+    kind: "render" | "delete" | "title" | "hook",
+    action: () => Promise<unknown>,
+  ) {
     setBusy(kind);
     setError(null);
     try {
@@ -106,40 +108,14 @@ function CandidateRow({
           </span>
         )}
 
-        {editing ? (
-          <input
-            autoFocus
-            value={draftTitle}
-            onChange={(event) => setDraftTitle(event.target.value)}
-            onBlur={() => {
-              setEditing(false);
-              if (draftTitle.trim() && draftTitle !== candidate.title) {
-                void run("title", () =>
-                  updateCandidate(candidate.id, { title: draftTitle.trim() }),
-                );
-              } else {
-                setDraftTitle(candidate.title);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") {
-                setDraftTitle(candidate.title);
-                setEditing(false);
-              }
-            }}
-            className="min-w-40 flex-1 rounded border border-white/20 bg-black/40 px-2 py-0.5 text-sm text-zinc-100 focus:outline-none"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            title="Editar el título"
-            className="min-w-0 flex-1 truncate text-left text-sm text-zinc-100 hover:text-white"
-          >
-            {candidate.title}
-          </button>
-        )}
+        <InlineText
+          value={candidate.title}
+          placeholder="Sin título"
+          title="Editar el título del clip"
+          className="min-w-0 flex-1 truncate text-sm text-zinc-100 hover:text-white"
+          emptyClassName="min-w-0 flex-1 truncate text-sm text-zinc-500 hover:text-zinc-300"
+          onSave={(value) => run("title", () => updateCandidate(candidate.id, { title: value }))}
+        />
 
         <button
           type="button"
@@ -154,11 +130,25 @@ function CandidateRow({
         <StatusBadge status={candidate.status} />
       </div>
 
-      {candidate.hook && (
-        <p className="mt-2 border-l-2 border-emerald-500/40 pl-3 text-sm italic text-zinc-300">
-          {candidate.hook}
-        </p>
-      )}
+      {/* El gancho no es decorativo: se escribe SOBRE el vídeo en los primeros
+          segundos, y en un clip sin diálogo es lo único escrito que lleva. */}
+      <div className="mt-2 flex items-baseline gap-2 border-l-2 border-emerald-500/40 pl-3">
+        <span
+          className="shrink-0 text-[10px] uppercase tracking-wide text-zinc-600"
+          title="Se escribe sobre el vídeo durante los primeros segundos"
+        >
+          En pantalla
+        </span>
+        <InlineText
+          value={candidate.hook}
+          placeholder="+ escribir gancho"
+          allowEmpty
+          title="Texto que aparece sobre el vídeo. Vacío para quitarlo."
+          className="min-w-0 flex-1 text-sm italic text-zinc-300 hover:text-zinc-100"
+          emptyClassName="min-w-0 flex-1 text-sm text-zinc-600 hover:text-zinc-400"
+          onSave={(value) => run("hook", () => updateCandidate(candidate.id, { hook: value }))}
+        />
+      </div>
 
       {candidate.reason && (
         <p className="mt-2 text-xs leading-relaxed text-zinc-500">{candidate.reason}</p>

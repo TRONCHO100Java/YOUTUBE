@@ -173,7 +173,7 @@ pesado (Whisper y FFmpeg).
 | `GET` | `/api/clips/{id}/video` | El MP4. Admite `Range`, así que el `<video>` puede buscar sin descargarlo entero |
 | `GET` | `/api/clips/{id}/subtitles` | El `.srt` como fichero aparte |
 | `GET` | `/api/candidates/{id}` | Detalle de un candidato |
-| `PATCH` | `/api/candidates/{id}` | Ajusta entrada, salida, título o estado |
+| `PATCH` | `/api/candidates/{id}` | Ajusta entrada, salida, título, gancho o estado |
 | `POST` | `/api/candidates/{id}/render` | Encola el render de ese único clip |
 | `DELETE` | `/api/candidates/{id}` | Borra el candidato y su clip |
 | `GET` | `/health`, `/health/ready` | Liveness y readiness |
@@ -457,6 +457,32 @@ cada valor del estilo es un píxel del clip final.
 
 ```
 BURN_SUBTITLES=true          # false deja el clip limpio; el .srt se genera igual
+```
+
+### Gancho en pantalla
+
+El mismo `.ass` lleva una segunda capa: el **gancho**, arriba y solo los primeros segundos.
+
+No es decoración. Un clip del perfil visual no lleva subtítulos —no hay nada que
+subtitular— así que sin esto se publica un vídeo mudo y sin una sola palabra que explique
+qué se está mirando. El gancho es lo que decide si alguien deja de bajar el dedo.
+
+Va arriba por dos motivos: no pisa a los subtítulos, y la mitad inferior la tapan el nombre
+del autor, los botones y la barra de progreso de las tres aplicaciones.
+
+Lo escribe la IA junto al resto del candidato, y se puede reescribir clip a clip desde el
+editor: en la lista de clips, «En pantalla» es un campo editable. Vaciarlo quita el texto.
+
+Un gancho largo se parte en líneas de `HOOK_LINE_LENGTH` caracteres y, si aun así no cabe,
+se **recorta** con puntos suspensivos en lugar de encogerse: el tamaño está elegido para
+leerse en un móvil a un brazo de distancia, y reducirlo para que quepa todo anula el motivo
+de ponerlo.
+
+```
+HOOK_OVERLAY=true
+HOOK_OVERLAY_SECONDS=3       # la ventana en la que se decide el scroll
+HOOK_FONT_SIZE=100           # ~5 % de la altura de un 1080x1920
+HOOK_LINE_LENGTH=18
 ```
 
 ## 12. Vídeos que no hablan
