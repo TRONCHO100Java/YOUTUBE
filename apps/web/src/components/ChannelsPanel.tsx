@@ -92,14 +92,13 @@ export function ChannelsPanel() {
   }
 
   return (
-    <section aria-label="Canales vigilados" className="mt-10">
-      <h2 className="text-sm font-medium text-zinc-400">Canales vigilados</h2>
+    <section aria-label="Canales vigilados">
       <p className="mt-1 text-xs text-zinc-500">
         Sus vídeos nuevos entran solos en la cola. Se empieza a mirar desde ahora, no desde
         su historial.
       </p>
 
-      <form onSubmit={handleAdd} className="mt-3 flex flex-col gap-3 sm:flex-row">
+      <form onSubmit={handleAdd} className="flex flex-col gap-3 sm:flex-row">
         <input
           type="text"
           value={channel}
@@ -184,6 +183,15 @@ export function ChannelsPanel() {
                   {watched.projects_created === 1 ? "proyecto" : "proyectos"}
                   {watched.max_duration ? ` · máx. ${Math.round(watched.max_duration / 60)} min` : ""}
                 </p>
+                {/* Un canal que no publica no se distingue de uno que va
+                    bien: los dos dicen "revisado hace 5 min". Esto es lo
+                    que separa el caudal de la apariencia de trabajo. */}
+                {watched.days_since_last_video !== null &&
+                  watched.days_since_last_video > 14 && (
+                    <p className="mt-1 text-xs text-amber-400/80">
+                      Sin publicar desde hace {watched.days_since_last_video} días
+                    </p>
+                  )}
                 {watched.last_error && (
                   <p className="mt-1 truncate text-xs text-rose-400/80" title={watched.last_error}>
                     {watched.last_error}

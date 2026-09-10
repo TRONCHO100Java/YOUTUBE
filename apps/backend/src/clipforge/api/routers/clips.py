@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 
@@ -16,6 +17,7 @@ from clipforge.core.errors import ConflictError, NotFoundError
 from clipforge.core.logging import get_logger
 from clipforge.core.storage import absolute_from_storage, sanitize_filename
 from clipforge.db.models import GeneratedClip
+from clipforge.services.video.thumbnail import ensure_thumbnail, thumbnail_path
 
 #: Tope por tanda. Mas que esto no es una tanda, es un borrado masivo
 #: hecho sin mirar.
@@ -107,9 +109,11 @@ async def bulk_delete_files(payload: BulkClips, repo: ClipRepo) -> BulkResult:
             if not relative:
                 continue
             try:
-                absolute_from_storage(relative).unlink(missing_ok=True)
+                path = absolute_from_storage(relative)
             except ValueError:
                 continue
+            path.unlink(missing_ok=True)
+            thumbnail_path(path).unlink(missing_ok=True)
         clip.deleted_at = datetime.now(UTC)
         changed += 1
 
@@ -218,12 +222,43 @@ async def delete_file(clip_id: uuid.UUID, repo: ClipRepo) -> GeneratedClipRead:
         except ValueError:
             continue
         path.unlink(missing_ok=True)
+        # La miniatura sale del MP4: sin el no se puede regenerar, y
+        # dejarla suelta seria enseñar un clip que ya no se puede ver.
+        thumbnail_path(path).unlink(missing_ok=True)
 
     clip.deleted_at = datetime.now(UTC)
     await repo.session.commit()
 
     logger.info("clip.file_deleted", clip_id=str(clip_id))
     return GeneratedClipRead.from_model(await _require(clip_id, repo))
+
+
+@router.get(
+    "/{clip_id}/thumbnail",
+    summary="Miniatura del clip",
+    response_class=FileResponse,
+    responses={200: {"content": {"image/jpeg": {}}}},
+)
+async def get_clip_thumbnail(clip_id: uuid.UUID, repo: ClipRepo) -> FileResponse:
+    """Sirve una imagen del clip, sacándola la primera vez que se pide.
+
+    Existe para no tener que cargar veinte vídeos de treinta megas solo
+    para que el navegador pinte su primer fotograma. Una imagen de veinte
+    kilos hace el mismo trabajo.
+
+    Se genera al vuelo y se guarda: así vale también para los clips que ya
+    estaban renderizados desde antes de que esto existiera.
+    """
+    clip = await _require(clip_id, repo)
+    if clip.deleted_at is not None:
+        raise NotFoundError("El fichero de este clip se borró para dejar sitio.")
+
+    path = _resolve(clip.file_path)
+    # A un hilo: ffmpeg bloquea, y dejar parado el bucle de eventos mientras
+    # se generan veinte miniaturas congelaría el resto de la API.
+    thumb = await asyncio.to_thread(ensure_thumbnail, path)
+
+    return FileResponse(thumb, media_type="image/jpeg")
 
 
 @router.get(

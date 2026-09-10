@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from clipforge.core.config import settings
-from clipforge.core.errors import ExternalToolError
+from clipforge.core.errors import ClipForgeError, ExternalToolError
 from clipforge.core.logging import get_logger
 from clipforge.core.storage import ProjectStorage, StorageArea
 from clipforge.services.ai.story import NOTE_SECONDS
@@ -45,6 +45,7 @@ from clipforge.services.video.framing import CropPlan, FocusSource, build_track,
 from clipforge.services.video.letterbox import detect_content_window
 from clipforge.services.video.probe import probe_video
 from clipforge.services.video.render import render_vertical_clip
+from clipforge.services.video.thumbnail import ensure_thumbnail
 
 logger = get_logger(__name__)
 
@@ -446,6 +447,17 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         outro=setup.outro,
     )
     setup.storage.assert_within_root(result.path)
+
+    # La miniatura, aquí y no cuando alguien abra la lista. Generarla bajo
+    # demanda parecía más barato hasta que veinte clips en pantalla lanzaron
+    # veinte ffmpeg a la vez contra un navegador que solo abre seis
+    # conexiones: la lista se quedaba en negro esperando. Aquí cuesta unas
+    # décimas al lado de un render que ya ha durado segundos.
+    try:
+        ensure_thumbnail(result.path)
+    except ClipForgeError as exc:
+        # Sin miniatura el clip sirve igual: no puede tumbar el render.
+        logger.warning("render.thumbnail_failed", clip=result.path.name, error=exc.message)
 
     return RenderedClip(
         path=result.path,

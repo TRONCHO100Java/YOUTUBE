@@ -4,7 +4,7 @@ import { TodayBoard } from "@/components/TodayBoard";
 
 export default function HomePage() {
   return (
-    <main className="mx-auto w-full max-w-3xl px-6 py-16 sm:py-24">
+    <main className="mx-auto w-full max-w-5xl px-6 py-10 sm:py-14">
       <header>
         <p className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">ClipForge</p>
         <h1 className="mt-3 text-4xl font-semibold tracking-tight text-zinc-50 sm:text-5xl">

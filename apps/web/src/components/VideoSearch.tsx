@@ -107,8 +107,7 @@ export function VideoSearch({ onQueued }: Props) {
   }
 
   return (
-    <section aria-label="Buscar vídeos" className="mt-10">
-      <h2 className="text-sm font-medium text-zinc-400">Buscar en YouTube</h2>
+    <section aria-label="Buscar vídeos">
 
       <form onSubmit={handleSearch} className="mt-3 flex flex-col gap-3 sm:flex-row">
         <input

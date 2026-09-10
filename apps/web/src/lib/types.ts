@@ -179,6 +179,8 @@ export interface WatchedChannel {
   /** A qué canal propio van los clips de este. */
   publish_channel_id: string | null;
   last_video_published_at: string | null;
+  /** Días desde su último vídeo. Distingue caudal de canal muerto. */
+  days_since_last_video: number | null;
   last_checked_at: string | null;
   /** Por qué falló la última revisión: un canal callado y uno roto se ven igual sin esto. */
   last_error: string | null;

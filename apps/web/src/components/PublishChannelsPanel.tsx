@@ -107,14 +107,13 @@ export function PublishChannelsPanel() {
   const orphans = pending.filter((clip) => !clip.channel_id);
 
   return (
-    <section aria-label="Canales de publicación" className="mt-10">
-      <h2 className="text-sm font-medium text-zinc-400">Canales de publicación</h2>
+    <section aria-label="Canales de publicación">
       <p className="mt-1 text-xs text-zinc-500">
         Dónde acaba cada clip. El reparto sale de las etiquetas que ya lleva: quién sale,
         de qué va y qué clase de momento es.
       </p>
 
-      <form onSubmit={handleAdd} className="mt-3 space-y-3">
+      <form onSubmit={handleAdd} className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row">
           <input
             type="text"

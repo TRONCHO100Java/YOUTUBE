@@ -24,10 +24,12 @@ from typing import Any
 from sqlalchemy import select
 
 from clipforge.core.config import settings
+from clipforge.core.errors import ClipForgeError
 from clipforge.core.logging import get_logger
-from clipforge.core.storage import ProjectStorage, StorageArea
-from clipforge.db.models import Project, ProjectStatus
+from clipforge.core.storage import ProjectStorage, StorageArea, absolute_from_storage
+from clipforge.db.models import GeneratedClip, Project, ProjectStatus
 from clipforge.db.session import sync_session_scope
+from clipforge.services.video.thumbnail import ensure_thumbnail
 from clipforge.worker.celery_app import celery_app
 
 logger = get_logger(__name__)
@@ -190,6 +192,39 @@ def rescue_stalled(idle_minutes: int | None = None) -> dict[str, Any]:
 
     logger.info("maintenance.rescued", projects=len(rescued), idle_minutes=minutes)
     return {"rescued": len(rescued), "projects": rescued}
+
+
+@celery_app.task(name="clipforge.maintenance.backfill_thumbnails")
+def backfill_thumbnails() -> dict[str, Any]:
+    """Genera las miniaturas que falten de los clips ya renderizados.
+
+    Los clips anteriores a que existieran no la tienen, y sacarlas cuando
+    alguien abre la lista significa treinta ffmpeg a la vez contra un
+    navegador que solo abre seis conexiones: la lista se queda en negro.
+    Aqui se hacen de una en una y sin que nadie espere.
+    """
+    made = 0
+    failed = 0
+
+    with sync_session_scope() as session:
+        paths = [
+            clip.file_path
+            for clip in session.execute(
+                select(GeneratedClip).where(GeneratedClip.deleted_at.is_(None))
+            ).scalars()
+            if clip.file_path
+        ]
+
+    for relative in paths:
+        try:
+            ensure_thumbnail(absolute_from_storage(relative))
+            made += 1
+        except (ClipForgeError, ValueError):
+            # Un clip cuyo fichero ya no esta no es un error de esta tarea.
+            failed += 1
+
+    logger.info("maintenance.thumbnails", made=made, failed=failed)
+    return {"made": made, "failed": failed}
 
 
 def _purge_one(project_id: uuid.UUID) -> int:

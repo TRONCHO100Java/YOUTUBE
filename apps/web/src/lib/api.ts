@@ -365,6 +365,16 @@ export function clipVideoUrl(clipId: string): string {
   return `${API_BASE_URL}/api/clips/${clipId}/video`;
 }
 
+/**
+ * URL de la miniatura del clip.
+ *
+ * Veinte kilos en vez de treinta megas: con una lista de veinte clips, la
+ * diferencia entre que la página cargue y que no.
+ */
+export function clipThumbnailUrl(clipId: string): string {
+  return `${API_BASE_URL}/api/clips/${clipId}/thumbnail`;
+}
+
 /** URL del .srt suelto, para publicar el clip con subtítulos aparte. */
 export function clipSubtitlesUrl(clipId: string): string {
   return `${API_BASE_URL}/api/clips/${clipId}/subtitles`;

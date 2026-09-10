@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 
 import { ChannelsPanel } from "@/components/ChannelsPanel";
+import { Collapsible } from "@/components/Collapsible";
 import { NewProjectForm } from "@/components/NewProjectForm";
 import { ProjectCard } from "@/components/ProjectCard";
 import { PublishChannelsPanel } from "@/components/PublishChannelsPanel";
@@ -33,14 +34,32 @@ export function ProjectsPanel() {
     <>
       <NewProjectForm onCreated={refresh} />
 
-      {/* Buscar y vigilar canales van antes de la lista porque son el
-          principio del trabajo: de dónde salen los vídeos. */}
-      <VideoSearch onQueued={refresh} />
-      <ChannelsPanel />
-      <PublishChannelsPanel />
+      {/* Todo lo de abajo es configuración: se toca al montar un canal y
+          luego casi nunca. Va plegado para no tener que recorrer media
+          página de formularios cada vez que se entra a subir clips. */}
+      <Collapsible title="Buscar vídeos en YouTube">
+        <VideoSearch onQueued={refresh} />
+      </Collapsible>
 
-      <section aria-label="Proyectos" className="mt-10">
-        <h2 className="text-sm font-medium text-zinc-400">Proyectos</h2>
+      <Collapsible title="Canales vigilados">
+        <ChannelsPanel />
+      </Collapsible>
+
+      <Collapsible title="Canales de publicación">
+        <PublishChannelsPanel />
+      </Collapsible>
+
+      <Collapsible
+        title="Proyectos"
+        defaultOpen
+        badge={
+          projects ? (
+            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] tabular-nums text-zinc-500">
+              {projects.length}
+            </span>
+          ) : null
+        }
+      >
 
         {error && (
           <p role="alert" className="mt-3 text-sm text-rose-400">
@@ -66,7 +85,7 @@ export function ProjectsPanel() {
             ))}
           </ul>
         )}
-      </section>
+      </Collapsible>
     </>
   );
 }
