@@ -169,6 +169,19 @@ class Settings(BaseSettings):
     #: Súbelo solo si usas un modelo grande, donde agrupar sale más barato.
     vision_blocks_per_request: int = 1
 
+    # ------------------------------------------------------------ publicacion
+    #: Credenciales OAuth de un proyecto de Google Cloud con la API de datos de
+    #: YouTube activada, tipo "aplicacion de escritorio". Son secretas: fuera
+    #: del repositorio.
+    youtube_client_secrets_file: Path | None = None
+    #: Donde se guarda el token tras autorizar una vez. Se refresca solo.
+    youtube_token_file: Path | None = None
+    #: Privacidad con la que se sube. "private" de fabrica y a proposito: la
+    #: API restringe a privado todo lo que sube un proyecto sin auditar, asi
+    #: que es lo que va a pasar de todos modos y prometer otra cosa seria
+    #: mentir. Con la auditoria aprobada, cambialo a "public".
+    youtube_privacy: Literal["private", "unlisted", "public"] = "private"
+
     # ---------------------------------------------------------------- ingesta
     #: Revision automatica de los canales vigilados. Apagarlo deja los canales
     #: dados de alta pero sin mirar: sirve para trabajar sin que entren videos

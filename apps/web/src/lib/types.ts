@@ -130,6 +130,14 @@ export interface GeneratedClip {
   has_burned_subtitles: boolean;
   has_subtitle_file: boolean;
   encoder: string | null;
+  /** Id en YouTube si ya se subió. null = todavía no ha salido de aquí. */
+  youtube_video_id: string | null;
+  published_at: string | null;
+  /** Con qué privacidad quedó: un proyecto de API sin auditar sube en privado. */
+  privacy_status: string | null;
+  /** Rendimiento real. Lo único que puede decir si la nota acertó. */
+  view_count: number | null;
+  like_count: number | null;
 }
 
 // ------------------------------------------------------------ ingesta ---

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 
+import { PublishButton } from "@/components/PublishButton";
 import { PublishingNotes } from "@/components/PublishingNotes";
 import { clipSubtitlesUrl, clipVideoUrl, listClips } from "@/lib/api";
 import type { GeneratedClip } from "@/lib/types";
@@ -42,23 +43,17 @@ export function ClipList({ projectId, emptyAction, reloadKey = 0 }: Props) {
   const [clips, setClips] = useState<GeneratedClip[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const load = useCallback(() => {
     listClips(projectId)
-      .then((result) => {
-        if (!cancelled) setClips(result);
-      })
+      .then(setClips)
       .catch((cause: unknown) => {
-        if (!cancelled) {
-          setError(
-            cause instanceof Error ? cause.message : "Error desconocido",
-          );
-        }
+        setError(cause instanceof Error ? cause.message : "Error desconocido");
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, reloadKey]);
+  }, [projectId]);
+
+  useEffect(() => {
+    load();
+  }, [load, reloadKey]);
 
   if (error) {
     return <p className="px-4 pb-4 text-sm text-rose-400">{error}</p>;
@@ -157,6 +152,10 @@ export function ClipList({ projectId, emptyAction, reloadKey = 0 }: Props) {
                   .srt
                 </a>
               )}
+            </div>
+
+            <div className="mt-2">
+              <PublishButton clip={clip} onPublished={load} />
             </div>
           </div>
         </li>

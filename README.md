@@ -179,6 +179,7 @@ pesado (Whisper y FFmpeg).
 | `GET` | `/api/clips/{id}` | Detalle de un clip |
 | `GET` | `/api/clips/{id}/video` | El MP4. Admite `Range`, así que el `<video>` puede buscar sin descargarlo entero |
 | `GET` | `/api/clips/{id}/subtitles` | El `.srt` como fichero aparte |
+| `POST` | `/api/clips/{id}/publish` | Sube el clip a YouTube |
 | `GET` | `/api/candidates/{id}` | Detalle de un candidato |
 | `PATCH` | `/api/candidates/{id}` | Ajusta entrada, salida, título, gancho o estado |
 | `POST` | `/api/candidates/{id}/render` | Encola el render de ese único clip |
@@ -708,7 +709,55 @@ rechaza al arrancar con *"-B option does not work on Windows"*. `start-dev.ps1` 
 una cuarta ventana para él. Sin esa ventana los canales siguen dados de alta pero
 nadie los mira, y los vídeos solo entran con el botón «Revisar».
 
-## 13. Vídeos que no hablan
+## 13. Publicar, y comprobar si acertamos
+
+El último tramo manual era subir: abrir la carpeta y pegar título, descripción y
+etiquetas cinco veces por proyecto. El botón **Subir a YouTube** de cada clip lo
+hace con el texto ya puesto.
+
+### El muro, por delante
+
+**La API de datos de YouTube restringe a privado todo lo que sube un proyecto de
+Google Cloud que no ha pasado su auditoría de cumplimiento.** El vídeo sube y queda
+en el canal con su título y su descripción, pero hay que entrar a publicarlo.
+
+Por eso `YOUTUBE_PRIVACY` viene en `private` de fábrica: es lo que va a pasar de
+todos modos, y que la interfaz prometiera otra cosa sería mentir. La etiqueta
+«privado» junto a cada clip subido está por lo mismo — creer que algo está publicado
+cuando no lo está es peor que no haberlo subido. Con la auditoría aprobada se cambia
+a `public` y ya está.
+
+Aun con esa limitación lo que ahorra es real: el fichero, el título, la descripción
+con su crédito y las etiquetas viajan solos y colocados.
+
+### Autorizar, una vez
+
+Autorizar abre el navegador y espera a que una persona diga que sí. Eso no lo puede
+hacer un worker ni un endpoint, así que vive en un comando aparte:
+
+```powershell
+cd apps\backend
+.\.venv\Scripts\pip.exe install -e .[publish]
+.\.venv\Scripts\python.exe -m clipforge.services.publish.authorize
+```
+
+A partir de ahí queda un token que se refresca solo. El permiso pedido es
+`youtube.upload` y nada más: este código sube, no husmea el canal.
+
+### El bucle que faltaba
+
+Y esto importa más de lo que parece. El sistema lleva cinco fases afinando una
+rúbrica de siete dimensiones **sin que ningún clip publicado le haya dicho nunca si
+acierta**. Con el id del vídeo subido se cierra el círculo: cada doce horas
+`clipforge.publish.refresh_stats` relee las vistas de lo publicado en el último mes
+y las guarda junto al clip, al lado de su nota.
+
+Las vistas se leen con **yt-dlp, no con la API de analíticas**: son públicas, así que
+no hacen falta credenciales ni se gasta cuota. Es menos preciso que el panel de
+YouTube —no hay retención ni impresiones— pero responde a la única pregunta que se
+estaba haciendo: de estos cinco clips, ¿cuál funcionó?
+
+## 14. Vídeos que no hablan
 
 El análisis de la sección anterior solo lee texto, y hay vídeos que no lo tienen. Sobre una
 recopilación de comedia física de 8:39, Whisper detectó "coreano" con un 47 % de confianza y
@@ -762,7 +811,7 @@ fallido. Se guardan los mejores bloques como candidatos `SIGNAL` sin puntuar, el
 pasa a `NEEDS_REVIEW` y el vídeo original se conserva pase lo que pase con
 `KEEP_SOURCE_VIDEO`. El editor manual hace el resto.
 
-## 14. Editor manual
+## 15. Editor manual
 
 `/projects/{id}` abre el vídeo original con la línea de tiempo de señales debajo, en cinco
 carriles sobre el mismo eje: volumen, movimiento, cortes, tramos propuestos y clips ya
@@ -781,7 +830,7 @@ el modelo, no una regla para la persona que está mirando el vídeo. Y un reproc
 sustituye lo que produjo la máquina (`AI` y `SIGNAL`) pero nunca borra un candidato
 `MANUAL`.
 
-## 15. Almacenamiento
+## 16. Almacenamiento
 
 ```
 storage/projects/{project_id}/
@@ -836,7 +885,7 @@ que arrancas: uvicorn, celery, pytest y alembic se lanzan desde sitios distintos
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 
-## 16. Migraciones
+## 17. Migraciones
 
 ```powershell
 cd apps\backend
@@ -847,7 +896,7 @@ cd apps\backend
 
 Revisa siempre el fichero generado antes de aplicarlo.
 
-## 17. Hoja de ruta
+## 18. Hoja de ruta
 
 - [x] **FASE 1** — infraestructura, API, BD, worker, frontend
 - [x] **FASE 2** — descarga con yt-dlp y creación de proyectos
@@ -866,3 +915,4 @@ Revisa siempre el fichero generado antes de aplicarlo.
 - [x] **FASE 15** — encuadre corregible a mano
 - [x] **FASE 16** — títulos en inglés, palabras clave, metadatos de publicación
 - [x] **FASE 17** — ingesta: búsqueda en YouTube y canales vigilados
+- [x] **FASE 18** — publicación en YouTube y lectura de vistas reales

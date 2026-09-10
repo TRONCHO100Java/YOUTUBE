@@ -28,6 +28,7 @@ celery_app = Celery(
         "clipforge.worker.tasks.render",
         "clipforge.worker.tasks.retitle",
         "clipforge.worker.tasks.ingest",
+        "clipforge.worker.tasks.publish",
     ],
 )
 
@@ -58,7 +59,15 @@ celery_app.conf.update(
             # Si el worker estuvo parado, al arrancar no interesa disparar
             # todas las revisiones que se perdio: basta con la siguiente.
             "options": {"expires": 60 * settings.ingest_interval_minutes},
-        }
+        },
+        # Releer las vistas de lo publicado. Es lo unico que puede decir si
+        # la rubrica acierta; una vez al dia basta, porque un Short no cambia
+        # de suerte cada hora.
+        "refresh-published-stats": {
+            "task": "clipforge.publish.refresh_stats",
+            "schedule": timedelta(hours=12),
+            "options": {"expires": 3600 * 12},
+        },
     }
     if settings.ingest_enabled
     else {},

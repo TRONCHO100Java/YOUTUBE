@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -135,6 +137,24 @@ class GeneratedClip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: parte se quedo dentro, y desde donde se corrige.
     crop_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     crop_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    #: Id del video en YouTube, si se ha subido. Es la unica prueba de que
+    #: este fichero salio de aqui, y la llave con la que se le piden luego las
+    #: vistas: sin el, el bucle de rendimiento no tiene por donde empezar.
+    youtube_video_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Con que privacidad quedo. Importa decirlo: un proyecto de API sin
+    #: auditar sube SIEMPRE en privado, y creer que algo esta publicado cuando
+    #: no lo esta es peor que no haberlo subido.
+    privacy_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    #: Rendimiento real, releido cada dia. Es lo unico que puede decir si la
+    #: rubrica de siete dimensiones acierta o es decoracion.
+    view_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    like_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stats_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     candidate: Mapped[ClipCandidate] = relationship(back_populates="generated_clip")
 

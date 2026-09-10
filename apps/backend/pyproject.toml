@@ -37,6 +37,13 @@ gpu = [
     "nvidia-cudnn-cu12>=9.0",
 ]
 
+# Publicacion en YouTube. Aparte porque solo hacen falta si se sube desde la
+# aplicacion, y arrastran bastante arbol de dependencias de Google.
+publish = [
+    "google-api-python-client>=2.150",
+    "google-auth-oauthlib>=1.2",
+]
+
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
@@ -73,8 +80,17 @@ disallow_untyped_decorators = false
 untyped_calls_exclude = ["redis"]
 
 [[tool.mypy.overrides]]
-# Ninguno de estos publica stubs ni marcador py.typed.
-module = ["celery.*", "faster_whisper.*", "ctranslate2.*"]
+# Ninguno de estos publica stubs ni marcador py.typed. Las de Google, ademas,
+# son opcionales (extra "publish"): en una instalacion sin ellas ni siquiera
+# estan, y por eso el modulo que las usa las importa dentro de la funcion.
+module = [
+    "celery.*",
+    "faster_whisper.*",
+    "ctranslate2.*",
+    "googleapiclient.*",
+    "google.*",
+    "google_auth_oauthlib.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

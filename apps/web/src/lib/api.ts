@@ -245,6 +245,16 @@ export function listCandidates(projectId: string): Promise<ClipCandidate[]> {
   return apiFetch<ClipCandidate[]>(`/api/projects/${projectId}/candidates`);
 }
 
+/**
+ * Sube el clip a YouTube.
+ *
+ * Con la privacidad de YOUTUBE_PRIVACY, que es `private` a propósito: la API
+ * restringe a privado todo lo que sube un proyecto sin auditar.
+ */
+export function publishClip(clipId: string): Promise<TaskRef> {
+  return apiFetch<TaskRef>(`/api/clips/${clipId}/publish`, { method: "POST" });
+}
+
 /** Clips ya renderizados, del mejor al peor. */
 export function listClips(projectId: string): Promise<GeneratedClip[]> {
   return apiFetch<GeneratedClip[]>(`/api/projects/${projectId}/clips`);
