@@ -325,10 +325,13 @@ class Settings(BaseSettings):
     min_clip_duration: int = 15
     max_clip_duration: int = 60
     target_clip_duration: int = 30
-    # Duraciones del perfil visual: un gag se agota antes que una explicación.
+    # Duraciones del perfil visual: un gag se agota antes que una explicacion,
+    # asi que baja con el resto y se queda por debajo del hablado. Cuando el
+    # maximo hablado bajo a 60 los dos perfiles se igualaron, y un perfil que
+    # existe para ser mas corto no puede permitir lo mismo que el otro.
     visual_min_clip_duration: int = 10
-    visual_max_clip_duration: int = 60
-    visual_target_clip_duration: int = 25
+    visual_max_clip_duration: int = 45
+    visual_target_clip_duration: int = 22
     #: Escribe el gancho del clip arriba, en los primeros segundos. Es lo
     #: único escrito que lleva un clip sin diálogo, y donde se decide si
     #: alguien sigue mirando.

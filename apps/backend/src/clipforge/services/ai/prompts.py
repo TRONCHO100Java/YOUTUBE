@@ -53,14 +53,27 @@ trim_end en segundos. Si te vale entero, pon 0 en ambos."""
 
 #: Cómo de exigente debe ser el modelo al INCLUIR un momento.
 #:
-#: En el análisis de texto se le pasa la transcripción entera y la mayor parte
-#: es relleno, así que descartar sin piedad es lo correcto. En el visual los
-#: bloques ya llegan preseleccionados por volumen y movimiento, y repetirle allí
-#: que puede devolver una lista vacía hace que un modelo pequeño devuelva
-#: siempre eso. La exigencia va en la PUNTUACIÓN, no en dejar el clip fuera.
+#: Esto decía lo contrario hasta la fase 20, y con razón: cuando el detector
+#: era también quien elegía, lo que proponía se publicaba, así que descartar
+#: sin piedad era lo correcto.
+#:
+#: Desde que hay un juez que compara y recorta, esa orden se volvió dañina.
+#: Medido sobre tres recopilaciones de Kai Cenat de nueve minutos: el modelo
+#: devolvió `{"candidates": []}` en TODAS las ventanas y los tres proyectos
+#: acabaron sin un solo clip. No es que no hubiera momentos: es que se le
+#: había dicho que ante la duda no propusiera, y un modelo pequeño lleva esa
+#: instrucción hasta el final.
+#:
+#: Ahora las dos modalidades dicen lo mismo, que es lo que siempre debió ser:
+#: propón, que ya hay quien descarta.
 TEXT_SELECTIVITY = (
-    "Prefiere la calidad a la cantidad. Si no hay ningún momento realmente "
-    "bueno, devuelve una lista vacía. No rellenes."
+    "Propón con generosidad: varios momentos por fragmento si los hay. NO eres "
+    "tú quien decide qué se publica —después hay un editor jefe que los compara "
+    "todos y se queda con unos pocos—, así que tu trabajo es no dejarte nada "
+    "bueno fuera. Un momento dudoso que propones no cuesta nada; uno bueno que "
+    "no propones se pierde para siempre. Sé exigente con la PUNTUACIÓN, no "
+    "dejando momentos fuera. Devuelve la lista vacía solo si el fragmento "
+    "entero es relleno."
 )
 
 VISION_SELECTIVITY = (

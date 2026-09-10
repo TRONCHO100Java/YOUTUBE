@@ -89,6 +89,19 @@ def select_clips(
             details={"first_error": failures[0], "windows": len(windows)},
         )
 
+    # Todas las ventanas vacías no es lo mismo que un vídeo flojo: casi
+    # siempre es el modelo llevándose la instrucción de ser exigente hasta el
+    # final. Pasó con tres recopilaciones que estaban llenas de momentos, y
+    # desde fuera se vio como "la IA no ha encontrado nada". Se registra
+    # aparte para que la próxima vez se distinga de un vídeo aburrido.
+    if not collected and not failures:
+        logger.warning(
+            "ai.analysis_all_empty",
+            windows=len(windows),
+            segments=len(segments),
+            provider=analyzer.provider,
+        )
+
     # El límite es el del POOL, no el del proyecto: aquí se detecta en
     # bruto y quien elige es el juez. Recortar a cinco antes de juzgar era
     # dejar la decisión en manos de quien nunca vio más de una ventana.
