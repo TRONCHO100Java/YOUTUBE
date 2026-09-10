@@ -7,6 +7,8 @@ a una segunda maquina, basta con arrancar alli un worker suscrito a `gpu`.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from celery import Celery
 from celery.signals import setup_logging
 
@@ -25,6 +27,7 @@ celery_app = Celery(
         "clipforge.worker.tasks.pipeline",
         "clipforge.worker.tasks.render",
         "clipforge.worker.tasks.retitle",
+        "clipforge.worker.tasks.ingest",
     ],
 )
 
@@ -44,6 +47,21 @@ celery_app.conf.update(
     task_default_queue=QUEUE_CPU,
     task_routes={"clipforge.pipeline.*": {"queue": QUEUE_GPU}},
     broker_connection_retry_on_startup=True,
+    # Temporizador: revisar los canales vigilados. Es lo que hace que la
+    # aplicacion traiga videos sola en lugar de esperar a que alguien pegue
+    # una URL. Va embebido en el worker (`celery worker -B`) porque en un
+    # solo equipo un cuarto proceso solo seria una ventana mas que cerrar.
+    beat_schedule={
+        "poll-watched-channels": {
+            "task": "clipforge.ingest.poll_channels",
+            "schedule": timedelta(minutes=settings.ingest_interval_minutes),
+            # Si el worker estuvo parado, al arrancar no interesa disparar
+            # todas las revisiones que se perdio: basta con la siguiente.
+            "options": {"expires": 60 * settings.ingest_interval_minutes},
+        }
+    }
+    if settings.ingest_enabled
+    else {},
 )
 
 

@@ -97,6 +97,15 @@ Start-Process powershell -ArgumentList @(
     "Set-Location '$backend'; .\.venv\Scripts\celery.exe -A clipforge.worker.celery_app worker --loglevel=info --pool=solo -Q cpu,gpu"
 )
 
+Write-Host '==> Abriendo temporizador (Celery beat)...' -ForegroundColor Cyan
+# Proceso aparte y no '-B' dentro del worker: el beat embebido no funciona
+# en Windows, Celery lo rechaza al arrancar. Es quien dispara la revision
+# de los canales vigilados; sin el, los videos nuevos solo entran a mano.
+Start-Process powershell -ArgumentList @(
+    '-NoExit', '-Command',
+    "Set-Location '$backend'; .\.venv\Scripts\celery.exe -A clipforge.worker.celery_app beat --loglevel=info"
+)
+
 if (-not $NoWeb) {
     Write-Host '==> Abriendo frontend (puerto 3000)...' -ForegroundColor Cyan
     Start-Process powershell -ArgumentList @(
@@ -121,4 +130,4 @@ Write-Host '  Frontend  http://localhost:3000'
 Write-Host '  API       http://localhost:8000'
 Write-Host '  OpenAPI   http://localhost:8000/docs'
 Write-Host ''
-Write-Host 'Cierra las tres ventanas de PowerShell para parar la aplicacion.'
+Write-Host 'Cierra las cuatro ventanas de PowerShell para parar la aplicacion.'

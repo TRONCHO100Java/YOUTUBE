@@ -169,6 +169,21 @@ class Settings(BaseSettings):
     #: Súbelo solo si usas un modelo grande, donde agrupar sale más barato.
     vision_blocks_per_request: int = 1
 
+    # ---------------------------------------------------------------- ingesta
+    #: Revision automatica de los canales vigilados. Apagarlo deja los canales
+    #: dados de alta pero sin mirar: sirve para trabajar sin que entren videos
+    #: nuevos por medio.
+    ingest_enabled: bool = True
+    #: Cada cuanto se leen los RSS. Son GET de 0,3 s sin cuota, asi que bajarlo
+    #: no cuesta nada; subirlo tampoco pierde nada, porque el feed conserva los
+    #: quince ultimos videos.
+    ingest_interval_minutes: int = 30
+    #: Tope de videos que un canal puede encolar en una sola revision. Un canal
+    #: que publica quince de golpe no debe convertirse en quince descargas.
+    ingest_max_per_check: int = 3
+    #: Resultados por busqueda en la interfaz.
+    search_results: int = 12
+
     # --------------------------------------------------------------- titulos
     #: El titulo que sale del analisis es un subproducto: el modelo esta
     #: puntuando siete dimensiones y lo escribe de paso, asi que describe la

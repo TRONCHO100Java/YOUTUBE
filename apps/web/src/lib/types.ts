@@ -132,6 +132,48 @@ export interface GeneratedClip {
   encoder: string | null;
 }
 
+// ------------------------------------------------------------ ingesta ---
+
+/** Un vídeo encontrado en YouTube, sin descargar nada todavía. */
+export interface VideoResult {
+  video_id: string;
+  title: string;
+  url: string;
+  channel: string | null;
+  duration: number | null;
+  view_count: number | null;
+  thumbnail: string | null;
+  published_at: string | null;
+  /** Ya hay un proyecto para esta URL: encolarlo otra vez costaría una descarga. */
+  already_queued: boolean;
+}
+
+/** Qué ha pasado con cada URL de una tanda. */
+export interface BatchResult {
+  queued: string[];
+  duplicated: string[];
+  rejected: Record<string, string>;
+}
+
+/** Un canal cuyos vídeos nuevos entran solos en la cola. */
+export interface WatchedChannel {
+  id: string;
+  channel_id: string;
+  title: string;
+  url: string;
+  enabled: boolean;
+  min_duration: number | null;
+  max_duration: number | null;
+  min_views: number | null;
+  keywords: string | null;
+  last_video_published_at: string | null;
+  last_checked_at: string | null;
+  /** Por qué falló la última revisión: un canal callado y uno roto se ven igual sin esto. */
+  last_error: string | null;
+  projects_created: number;
+  created_at: string;
+}
+
 /** Lo que devuelve un endpoint que encola trabajo. */
 export interface TaskRef {
   task_id: string;

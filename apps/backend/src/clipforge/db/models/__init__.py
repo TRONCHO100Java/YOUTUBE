@@ -5,6 +5,7 @@ nueva debe re-exportarse aqui.
 """
 
 from clipforge.db.base import Base
+from clipforge.db.models.channel import WatchedChannel
 from clipforge.db.models.clip import ClipCandidate, GeneratedClip
 from clipforge.db.models.enums import (
     PIPELINE_ORDER,
@@ -30,4 +31,5 @@ __all__ = [
     "SourceType",
     "Transcript",
     "TranscriptSegment",
+    "WatchedChannel",
 ]

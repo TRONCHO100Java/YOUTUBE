@@ -2,8 +2,10 @@
 
 import { useCallback } from "react";
 
+import { ChannelsPanel } from "@/components/ChannelsPanel";
 import { NewProjectForm } from "@/components/NewProjectForm";
 import { ProjectCard } from "@/components/ProjectCard";
+import { VideoSearch } from "@/components/VideoSearch";
 import { usePolling } from "@/hooks/usePolling";
 import { listProjects } from "@/lib/api";
 import { POLL_INTERVAL_MS } from "@/lib/config";
@@ -29,6 +31,11 @@ export function ProjectsPanel() {
   return (
     <>
       <NewProjectForm onCreated={refresh} />
+
+      {/* Buscar y vigilar canales van antes de la lista porque son el
+          principio del trabajo: de dónde salen los vídeos. */}
+      <VideoSearch onQueued={refresh} />
+      <ChannelsPanel />
 
       <section aria-label="Proyectos" className="mt-10">
         <h2 className="text-sm font-medium text-zinc-400">Proyectos</h2>

@@ -158,6 +158,11 @@ pesado (Whisper y FFmpeg).
 
 | Método | Ruta | Descripción |
 |---|---|---|
+| `GET` | `/api/search` | Busca vídeos en YouTube (`?q=`, filtros de duración y vistas) |
+| `POST` | `/api/projects/batch` | Encola varias URLs de una vez |
+| `GET` `POST` | `/api/channels` | Canales vigilados: listar y dar de alta |
+| `PATCH` `DELETE` | `/api/channels/{id}` | Pausar, editar filtros o dejar de vigilar |
+| `POST` | `/api/channels/{id}/check` | Revisar un canal ahora, sin esperar al temporizador |
 | `POST` | `/api/projects` | Crea un proyecto desde una URL y encola su procesamiento |
 | `GET` | `/api/projects` | Lista paginada |
 | `GET` | `/api/projects/{id}` | Detalle, con `progress` para la barra de estado |
@@ -656,7 +661,54 @@ HOOK_FONT_SIZE=100           # ~5 % de la altura de un 1080x1920
 HOOK_LINE_LENGTH=18
 ```
 
-## 12. Vídeos que no hablan
+## 12. Ingesta: los vídeos vienen solos
+
+Durante once fases el sistema esperó a que alguien pegase una URL. Esta es la mitad
+que faltaba: buscar desde dentro y vigilar canales.
+
+**Nada de esto usa la API de datos de YouTube.** Ni clave, ni proyecto en Google
+Cloud, ni cuota que se agota a las cien búsquedas. Las dos piezas ya estaban:
+
+| | Cómo | Medido |
+|---|---|---|
+| Buscar | `yt-dlp` con `ytsearchN:`, en extracción plana | 1,3 s para 8 resultados |
+| Vigilar un canal | El RSS público del canal (`feeds/videos.xml`) | 0,3 s, 15 vídeos |
+
+La búsqueda devuelve título, canal, **duración y vistas** sin bajar un solo byte de
+vídeo, que es lo que permite filtrar **antes** de descargar. Bajar 400 MB para
+descubrir que el vídeo duraba tres horas o tenía doscientas visitas es el gasto más
+tonto del pipeline.
+
+### Canales vigilados
+
+Un canal dado de alta convierte la aplicación en algo que corre solo: `celery beat`
+dispara `clipforge.ingest.poll_channels` cada `INGEST_INTERVAL_MINUTES`, y lo que
+sea nuevo entra en la cola sin que nadie toque nada.
+
+Tres decisiones gobiernan la revisión:
+
+- **La marca de agua se fija al dar de alta**, con la fecha del último vídeo del
+  canal. Vigilar un canal es querer lo que publique *a partir de ahora*; sin esto,
+  la primera revisión encolaría los quince vídeos que trae el feed.
+- **La marca de agua avanza con todo lo visto, no solo con lo aceptado.** Si no, un
+  vídeo descartado por el filtro se volvería a mirar en cada revisión, para siempre.
+- **Un canal que falla no para a los demás.** El error se guarda en su fila —y se
+  pinta en la interfaz— porque un canal callado tres días y uno roto tres días se
+  ven exactamente igual sin eso.
+
+Además, `INGEST_MAX_PER_CHECK` limita cuántos vídeos puede encolar un canal de una
+vez: uno que publica quince de golpe no debe convertirse en quince descargas
+simultáneas. Y ninguna URL que ya tenga proyecto se vuelve a encolar, porque el
+feed repite los mismos quince vídeos en cada lectura.
+
+### El temporizador va en su propio proceso
+
+`celery beat` **no puede ir embebido en el worker** (`-B`) en Windows: Celery lo
+rechaza al arrancar con *"-B option does not work on Windows"*. `start-dev.ps1` abre
+una cuarta ventana para él. Sin esa ventana los canales siguen dados de alta pero
+nadie los mira, y los vídeos solo entran con el botón «Revisar».
+
+## 13. Vídeos que no hablan
 
 El análisis de la sección anterior solo lee texto, y hay vídeos que no lo tienen. Sobre una
 recopilación de comedia física de 8:39, Whisper detectó "coreano" con un 47 % de confianza y
@@ -710,7 +762,7 @@ fallido. Se guardan los mejores bloques como candidatos `SIGNAL` sin puntuar, el
 pasa a `NEEDS_REVIEW` y el vídeo original se conserva pase lo que pase con
 `KEEP_SOURCE_VIDEO`. El editor manual hace el resto.
 
-## 13. Editor manual
+## 14. Editor manual
 
 `/projects/{id}` abre el vídeo original con la línea de tiempo de señales debajo, en cinco
 carriles sobre el mismo eje: volumen, movimiento, cortes, tramos propuestos y clips ya
@@ -729,7 +781,7 @@ el modelo, no una regla para la persona que está mirando el vídeo. Y un reproc
 sustituye lo que produjo la máquina (`AI` y `SIGNAL`) pero nunca borra un candidato
 `MANUAL`.
 
-## 14. Almacenamiento
+## 15. Almacenamiento
 
 ```
 storage/projects/{project_id}/
@@ -784,7 +836,7 @@ que arrancas: uvicorn, celery, pytest y alembic se lanzan desde sitios distintos
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 
-## 15. Migraciones
+## 16. Migraciones
 
 ```powershell
 cd apps\backend
@@ -795,7 +847,7 @@ cd apps\backend
 
 Revisa siempre el fichero generado antes de aplicarlo.
 
-## 16. Hoja de ruta
+## 17. Hoja de ruta
 
 - [x] **FASE 1** — infraestructura, API, BD, worker, frontend
 - [x] **FASE 2** — descarga con yt-dlp y creación de proyectos
@@ -810,3 +862,7 @@ Revisa siempre el fichero generado antes de aplicarlo.
 - [x] **FASE 11** — candidatos manuales y render de un clip suelto
 - [x] **FASE 12** — editor con línea de tiempo de señales
 - [x] **FASE 13** — encuadre inteligente por caras y movimiento
+- [x] **FASE 14** — gancho en pantalla y audio igualado
+- [x] **FASE 15** — encuadre corregible a mano
+- [x] **FASE 16** — títulos en inglés, palabras clave, metadatos de publicación
+- [x] **FASE 17** — ingesta: búsqueda en YouTube y canales vigilados

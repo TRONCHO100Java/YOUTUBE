@@ -10,6 +10,9 @@ import type {
   SignalTimeline,
   TaskRef,
   TaskState,
+  VideoResult,
+  WatchedChannel,
+  BatchResult,
 } from "@/lib/types";
 
 /** Error con la forma que devuelve el manejador central de la API. */
@@ -170,6 +173,71 @@ export async function waitForTask(
 /** Reprocesa un proyecto terminado o fallido. */
 export function retryProject(id: string): Promise<ProjectDetail> {
   return apiFetch<ProjectDetail>(`/api/projects/${id}/retry`, { method: "POST" });
+}
+
+// ------------------------------------------------------------- ingesta ---
+
+/** Busca vídeos en YouTube. Sin API key: lo resuelve yt-dlp por detrás. */
+export function searchVideos(
+  query: string,
+  filters: { minDuration?: number; maxDuration?: number; minViews?: number } = {},
+): Promise<VideoResult[]> {
+  const params = new URLSearchParams({ q: query });
+  if (filters.minDuration) params.set("min_duration", String(filters.minDuration));
+  if (filters.maxDuration) params.set("max_duration", String(filters.maxDuration));
+  if (filters.minViews) params.set("min_views", String(filters.minViews));
+  return apiFetch<VideoResult[]>(`/api/search?${params}`);
+}
+
+/** Encola varias URLs de una vez. Una mala no tumba las demás. */
+export function createBatch(urls: string[], keywords?: string): Promise<BatchResult> {
+  return apiFetch<BatchResult>("/api/projects/batch", {
+    method: "POST",
+    body: JSON.stringify({ urls, keywords: keywords?.trim() || null }),
+  });
+}
+
+/** Canales cuyos vídeos nuevos se procesan solos. */
+export function listChannels(): Promise<WatchedChannel[]> {
+  return apiFetch<WatchedChannel[]>("/api/channels");
+}
+
+export function addChannel(input: {
+  channel: string;
+  minDuration?: number;
+  maxDuration?: number;
+  minViews?: number;
+  keywords?: string;
+}): Promise<WatchedChannel> {
+  return apiFetch<WatchedChannel>("/api/channels", {
+    method: "POST",
+    body: JSON.stringify({
+      channel: input.channel,
+      min_duration: input.minDuration ?? null,
+      max_duration: input.maxDuration ?? null,
+      min_views: input.minViews ?? null,
+      keywords: input.keywords?.trim() || null,
+    }),
+  });
+}
+
+export function updateChannel(
+  id: string,
+  patch: { enabled?: boolean; keywords?: string },
+): Promise<WatchedChannel> {
+  return apiFetch<WatchedChannel>(`/api/channels/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteChannel(id: string): Promise<void> {
+  return apiFetchVoid(`/api/channels/${id}`, { method: "DELETE" });
+}
+
+/** Revisa un canal ahora, sin esperar al temporizador. */
+export function checkChannel(id: string): Promise<TaskRef> {
+  return apiFetch<TaskRef>(`/api/channels/${id}/check`, { method: "POST" });
 }
 
 /** Momentos detectados por la IA, del mejor al peor. */
