@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     #: si hace falta, la descarga lo baja otra vez sola. -1 lo conserva para
     #: siempre; 0 lo borra en cuanto el proyecto termina.
     source_retention_days: int = 7
+    #: Minutos que puede llevar un proyecto sin moverse antes de darlo por
+    #: huerfano y reencolarlo. Generoso a proposito: un pipeline vivo cambia
+    #: de estado segun avanza, y ninguna fase tarda tanto en callado.
+    stalled_project_minutes: int = 60
     keep_audio: bool = False
     keep_temp_files: bool = False
     # Vista derivada de los clips con nombres legibles, para subirlos a mano.

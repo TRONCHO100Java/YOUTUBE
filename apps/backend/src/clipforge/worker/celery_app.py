@@ -69,6 +69,13 @@ celery_app.conf.update(
         # originales de proyectos ya terminados, que no crecen solos.
         # Reintentar lo que fallo por causas pasajeras. Cada hora: si el
         # motivo era de red, para entonces suele haberse arreglado solo.
+        # Rescatar lo que se quedo a medias. Cada quince minutos: es lo que
+        # tarda en notarse que la cola esta parada sin motivo.
+        "rescue-stalled-projects": {
+            "task": "clipforge.maintenance.rescue_stalled",
+            "schedule": timedelta(minutes=15),
+            "options": {"expires": 900},
+        },
         "retry-failed-projects": {
             "task": "clipforge.maintenance.retry_failed",
             "schedule": timedelta(hours=1),

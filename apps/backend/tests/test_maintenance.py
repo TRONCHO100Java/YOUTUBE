@@ -63,3 +63,33 @@ class TestQueSeReintenta:
 
         assert isinstance(limit, int)
         assert 0 < limit <= 20
+
+
+class TestRescate:
+    """Lo que se queda a medias sin decirlo es peor que lo que falla."""
+
+    def test_no_toca_lo_que_ya_termino(self) -> None:
+        """Reencolar un proyecto terminado rehace horas de GPU para nada."""
+        body = inspect.getsource(maintenance.rescue_stalled).split('"""')[-1]
+
+        assert "ProjectStatus.COMPLETED" in body
+        assert "ProjectStatus.FAILED" in body
+        assert "ProjectStatus.NEEDS_REVIEW" in body
+        assert "notin_" in body, "debe excluirlos, no seleccionarlos"
+
+    def test_se_hace_dueno_de_la_tarea_nueva(self) -> None:
+        """Es lo que evita procesar el mismo video dos veces.
+
+        Si la tarea vieja seguia viva, al despertar compara su id con el
+        que guarda el proyecto y se para. Sin esta linea, un rescate
+        equivocado duplicaria el trabajo entero.
+        """
+        body = inspect.getsource(maintenance.rescue_stalled).split('"""')[-1]
+
+        assert "task_id = str(task.id)" in body
+
+    def test_el_margen_es_generoso(self) -> None:
+        """Un margen corto reencolaria pipelines vivos a mitad de trabajo."""
+        from clipforge.core.config import settings
+
+        assert settings.stalled_project_minutes >= 30

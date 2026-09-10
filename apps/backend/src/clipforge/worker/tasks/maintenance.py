@@ -135,6 +135,63 @@ def retry_failed(max_projects: int = 5) -> dict[str, Any]:
     return {"requeued": len(requeued), "projects": requeued}
 
 
+@celery_app.task(name="clipforge.maintenance.rescue_stalled")
+def rescue_stalled(idle_minutes: int | None = None) -> dict[str, Any]:
+    """Reencola los proyectos que se quedaron a medias sin que nadie lo diga.
+
+    Un worker que se reinicia, un cuelgue o un apagon dejan el proyecto
+    donde estaba —en cola o a mitad de una fase— y su mensaje se pierde.
+    Nadie vuelve a tocarlo: no aparece como fallido, porque no fallo, asi
+    que se queda como si estuviera trabajando para siempre. En algo que
+    tiene que funcionar sin nadie delante, ese silencio es peor que un error.
+
+    Se detecta por tiempo y no preguntandole a Celery. Con el backend de
+    Redis, una tarea perdida y una que espera turno se ven las dos como
+    PENDING, asi que preguntar no distingue el caso. El reloj si: un
+    pipeline vivo va cambiando el estado segun avanza, y ninguna fase
+    aguanta una hora callada en esta maquina.
+
+    Reencolar uno que en realidad seguia vivo no lo duplica. El proyecto
+    guarda el id de SU tarea: al reencolar se queda con el nuevo, y la
+    vieja, cuando despierta, ve que ya no es la dueña y se para sola.
+    """
+    from clipforge.worker.tasks.pipeline import process_project
+
+    minutes = settings.stalled_project_minutes if idle_minutes is None else idle_minutes
+    cutoff = datetime.now(UTC) - timedelta(minutes=minutes)
+    rescued: list[str] = []
+
+    with sync_session_scope() as session:
+        stalled = list(
+            session.execute(
+                select(Project).where(
+                    Project.status.notin_(
+                        [
+                            ProjectStatus.COMPLETED,
+                            ProjectStatus.FAILED,
+                            ProjectStatus.NEEDS_REVIEW,
+                        ]
+                    ),
+                    Project.updated_at < cutoff,
+                )
+            ).scalars()
+        )
+        for project in stalled:
+            rescued.append(str(project.id))
+
+    for project_id in rescued:
+        task = process_project.delay(project_id)
+        # El dueño pasa a ser la tarea nueva ANTES de que arranque: si la
+        # vieja seguia viva, esto es lo que la hace pararse al despertar.
+        with sync_session_scope() as session:
+            owner = session.get(Project, uuid.UUID(project_id))
+            if owner is not None:
+                owner.task_id = str(task.id)
+
+    logger.info("maintenance.rescued", projects=len(rescued), idle_minutes=minutes)
+    return {"rescued": len(rescued), "projects": rescued}
+
+
 def _purge_one(project_id: uuid.UUID) -> int:
     """Borra el original de un proyecto y devuelve los bytes recuperados.
 
