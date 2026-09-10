@@ -100,5 +100,37 @@ async def _check_worker() -> ComponentHealth:
         return ComponentHealth(status="degraded", detail=str(exc))
 
     if not workers:
-        return ComponentHealth(status="degraded", detail="Ningun worker Celery conectado")
+        # Un worker ocupado tampoco contesta: `--pool=solo` ejecuta la tarea en
+        # el hilo principal, el mismo que atiende los mensajes de control. Decir
+        # "no hay worker" mientras transcribe un vídeo de hora y media manda a
+        # buscar una avería que no existe, así que se cuenta lo que sí se sabe.
+        pending = await _queued_tasks()
+        queue = "" if pending is None else f" Tareas en cola: {pending}."
+        return ComponentHealth(
+            status="degraded",
+            detail=(
+                "Ningun worker Celery ha contestado. Puede estar caido o ocupado "
+                f"procesando un video, que tampoco responde mientras trabaja.{queue}"
+            ),
+        )
     return ComponentHealth(status="ok", detail=f"{len(workers)} worker(s): {', '.join(workers)}")
+
+
+async def _queued_tasks() -> int | None:
+    """Mensajes esperando en las colas de Celery, o None si Redis no contesta.
+
+    Con el broker Redis cada cola es una lista con el nombre de la cola, asi
+    que medirlas es un LLEN. Si Redis falla no se insiste: su propio check ya
+    lo esta diciendo.
+    """
+    from clipforge.worker.celery_app import QUEUE_CPU, QUEUE_GPU
+
+    client = aioredis.from_url(settings.redis_url)
+    try:
+        async with asyncio.timeout(_CHECK_TIMEOUT_SECONDS):
+            return int(await client.llen(QUEUE_CPU)) + int(await client.llen(QUEUE_GPU))
+    except Exception as exc:
+        logger.warning("health.queue_failed", error=str(exc))
+        return None
+    finally:
+        await client.aclose()

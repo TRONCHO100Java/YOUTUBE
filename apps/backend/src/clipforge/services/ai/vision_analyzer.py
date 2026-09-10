@@ -138,7 +138,9 @@ class VisionClipAnalyzer(BlockAnalyzer):
                 batch_blocks, context, frames_per_block=settings.vision_frames_per_block
             )
             try:
-                raw_candidates = self._request(rules, prompt, batch_frames)
+                raw_candidates = self._request(
+                    rules, prompt, batch_frames, keywords=bool(context.keywords)
+                )
             except ExternalToolError as exc:
                 logger.warning("ai.vision_batch_failed", batch=number, error=exc.message)
                 failures.append(exc.message)
@@ -184,8 +186,15 @@ class VisionClipAnalyzer(BlockAnalyzer):
             for index, block in enumerate(blocks)
         ]
 
-    def _request(self, rules: ProfileRules, prompt: str, frames: Sequence[Frame]) -> list[Any]:
-        system = build_system_prompt(rules, vision=True)
+    def _request(
+        self,
+        rules: ProfileRules,
+        prompt: str,
+        frames: Sequence[Frame],
+        *,
+        keywords: bool = False,
+    ) -> list[Any]:
+        system = build_system_prompt(rules, vision=True, keywords=keywords)
         schema = response_json_schema(rules, vision=True)
 
         if self.provider == "ollama":

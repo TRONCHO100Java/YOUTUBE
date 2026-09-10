@@ -76,7 +76,7 @@ def test_signal_candidates_are_marked_as_such() -> None:
 def test_signal_candidates_are_named_by_their_position() -> None:
     [suggestion] = suggestions_from_signals([_block(125.0, 155.0)], limit=1)
 
-    assert suggestion.title == "Momento en 2:05"
+    assert suggestion.title == "Moment at 2:05"
 
 
 def test_the_limit_is_honoured(monkeypatch: pytest.MonkeyPatch) -> None:

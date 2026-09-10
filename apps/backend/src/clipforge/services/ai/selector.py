@@ -166,7 +166,7 @@ def suggestions_from_signals(
             end_segment=None,
             start_time=block.start,
             end_time=block.end,
-            title=f"Momento en {timestamp(block.start)}",
+            title=f"Moment at {timestamp(block.start)}",
             hook=None,
             reason=(
                 f"Detectado por señales: {block.peaks} picos de sonido, "

@@ -54,6 +54,8 @@ export interface ProjectSummary {
 
 export interface ProjectDetail extends ProjectSummary {
   author: string | null;
+  /** De qué va el vídeo y quién sale, tal y como lo escribió el usuario. */
+  keywords: string | null;
   /** Avance del pipeline entre 0 y 1, derivado del estado. */
   progress: number;
   content_profile: ContentProfile | null;
@@ -166,9 +168,26 @@ export interface SignalTimeline {
 
 // ------------------------------------------------------------- etiquetas ---
 
+/**
+ * ¿El pipeline está trabajando en este proyecto ahora mismo?
+ *
+ * `CREATED` no cuenta: el proyecto está encolado y puede quedarse ahí un buen
+ * rato, porque el worker procesa un vídeo cada vez. Distinguirlo importa —es
+ * la diferencia entre "espera" y "actúa"— y lo miran tanto la tarjeta del
+ * proyecto como la lista, para saber si hay alguien delante en la cola.
+ */
+export function isProjectRunning(status: ProjectStatus): boolean {
+  return (
+    status !== "CREATED" &&
+    status !== "COMPLETED" &&
+    status !== "NEEDS_REVIEW" &&
+    status !== "FAILED"
+  );
+}
+
 /** Etiquetas en castellano para cada estado del pipeline. */
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
-  CREATED: "Creado",
+  CREATED: "En cola",
   DOWNLOADING: "Descargando vídeo",
   TRANSCRIBING: "Transcribiendo",
   ANALYZING: "Buscando mejores momentos",

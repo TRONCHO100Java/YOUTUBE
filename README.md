@@ -161,6 +161,7 @@ pesado (Whisper y FFmpeg).
 | `POST` | `/api/projects` | Crea un proyecto desde una URL y encola su procesamiento |
 | `GET` | `/api/projects` | Lista paginada |
 | `GET` | `/api/projects/{id}` | Detalle, con `progress` para la barra de estado |
+| `PATCH` | `/api/projects/{id}` | Cambia las palabras clave del proyecto |
 | `GET` | `/api/projects/{id}/transcript` | Transcripción con segmentos (`?include_words=true` añade los tiempos por palabra) |
 | `GET` | `/api/projects/{id}/candidates` | Momentos detectados, con su desglose de puntuación |
 | `POST` | `/api/projects/{id}/candidates` | Crea un clip recortado a mano (`start_time`, `end_time`, `title`) |
@@ -342,6 +343,74 @@ el error si fallan todas.
 
 **El total lo suma el backend, no el modelo.** Los LLM se equivocan sumando, y un total
 incoherente con su propio desglose es imposible de depurar.
+
+### Palabras clave del usuario
+
+Al crear el proyecto se puede escribir **de qué va el vídeo y quién sale**:
+`Kai Cenat, Speed, Among Us`. Es la única información que el sistema no puede
+sacar por su cuenta —el título de YouTube rara vez nombra a los streamers que
+aparecen, y la transcripción usa apodos que nadie busca— y es justo la que
+hace que un Short salga en la búsqueda de alguien.
+
+Se guardan tal y como se escriben (`projects.keywords`) y se parten al usarlas,
+no al guardarlas, para que el campo del formulario devuelva lo tecleado. Llegan
+al prompt en dos sitios: la cabecera del mensaje (son datos de ESTE vídeo) y
+una regla que gobierna cómo usarlas.
+
+La regla tiene dos mitades y las dos importan: **úsalas cuando encajen** —un
+nombre propio vale más que cualquier adjetivo— y **no las metas a la fuerza**,
+porque un título que promete algo que el clip no enseña pierde al espectador en
+dos segundos, y eso se paga en retención.
+
+`PATCH /api/projects/{id}` las cambia después sin volver a descargar el vídeo.
+No relanza nada por su cuenta: solo influyen en el análisis, así que aplicarlas
+a un proyecto terminado es pulsar Regenerar, y esa decisión es del usuario.
+
+### Titulado
+
+El título que sale del análisis es un **subproducto**. Ese modelo está
+repartiendo cien puntos entre siete dimensiones y el título lo escribe de paso,
+así que nombra la escena en lugar de venderla: *"La fiesta de colores"*, *"El
+salto del niño"*. Eso es una etiqueta de archivo, no un título de YouTube.
+
+`services/ai/titles.py` lo arregla separando el trabajo. Corre **después** de la
+selección, sobre los clips que van a existir de verdad, así que cuesta **una
+llamada por proyecto** en lugar de una por ventana de transcripción. A ese
+precio se puede pagar un modelo bueno aunque el análisis corra en local:
+`AI_TITLE_PROVIDER` y `AI_TITLE_MODEL` desvían solo esta llamada.
+
+Los clips van todos en la misma petición, y no uno por uno, por una razón que
+no es el coste: el modelo ve los demás mientras escribe cada título. Es lo
+único que evita que cinco clips del mismo vídeo acaben con cinco variaciones de
+la misma frase.
+
+Se piden varias variantes por clip y se acepta **la primera que pasa el filtro**:
+
+| Se descarta | Por qué |
+|---|---|
+| Más de `TITLE_MAX_CHARS` | El móvil corta el resto |
+| Tópicos (*"you won't believe"*, *"must watch"*, *"funny moment"*) | Se pasa de largo |
+| TODO EN MAYÚSCULAS | Parece spam |
+| Igual que el gancho | Ya va escrito en pantalla: se gastarían los dos textos en decir lo mismo |
+| Mismo arranque que otro del lote | Son clips del mismo vídeo y se ven seguidos |
+
+Si ninguna variante pasa limpia, se recorta la mejor por la última palabra que
+quepa. Si aun así no queda nada, **manda el título del análisis**: peor, pero
+real. Y si la llamada entera falla, se registra y los clips salen como estaban.
+El titulado es una mejora, no un requisito.
+
+### Idioma de los textos
+
+**El título y el gancho van siempre en inglés**, sea cual sea el idioma del vídeo. Son
+los dos textos que se publican —el gancho además se incrusta en pantalla— y el público
+objetivo de TikTok, Reels y Shorts es angloparlante. Si lo que se dice en el vídeo está
+en otro idioma, el modelo lo traduce.
+
+El **motivo** es la excepción y se queda en español: no sale del sistema, es la nota que
+lee quien revisa los candidatos en el editor.
+
+Los subtítulos incrustados no entran en esta regla: son la transcripción literal del
+audio, así que hablan el idioma del vídeo.
 
 ### Validación de lo que devuelve el modelo
 

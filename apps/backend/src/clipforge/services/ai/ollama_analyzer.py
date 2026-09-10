@@ -97,7 +97,10 @@ class OllamaClipAnalyzer(ClipAnalyzer):
             "stream": False,
             "format": response_json_schema(rules),
             "messages": [
-                {"role": "system", "content": build_system_prompt(rules)},
+                {
+                    "role": "system",
+                    "content": build_system_prompt(rules, keywords=bool(context.keywords)),
+                },
                 {"role": "user", "content": build_user_prompt(window, context)},
             ],
             "options": {

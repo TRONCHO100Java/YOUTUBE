@@ -72,13 +72,51 @@ VISION_SELECTIVITY = (
 )
 
 
-def build_system_prompt(rules: ProfileRules, *, vision: bool = False) -> str:
-    """Prompt del sistema para el perfil y la modalidad indicados."""
+#: El vídeo puede estar en cualquier idioma, pero el clip se publica en inglés:
+#: el título y el gancho son texto de cara al público (el gancho se incrusta en
+#: pantalla), así que van en inglés siempre. El motivo no se publica —es la nota
+#: que lee el editor en la interfaz— y se queda en español.
+LANGUAGE_RULE = (
+    "Escribe el título y el gancho SIEMPRE EN INGLÉS, sea cual sea el idioma del "
+    "vídeo: son los textos que se publican. Si lo que se dice está en otro idioma, "
+    "tradúcelo. El motivo escríbelo en español: es una nota interna para el editor."
+)
+
+
+#: Las palabras clave son un arma de doble filo: bien usadas ponen en el
+#: título el nombre que la gente busca; metidas a la fuerza producen títulos
+#: que prometen algo que el clip no enseña, y eso se paga en retención. La
+#: regla dice las dos cosas.
+KEYWORDS_RULE = (
+    "Se te dan PALABRAS CLAVE del vídeo (de qué va, quién sale, cómo se le "
+    "busca). Úsalas en el título y en el gancho SOLO cuando encajen con lo que "
+    "pasa en ese clip concreto: un nombre propio que la gente busca vale más "
+    "que cualquier adjetivo. Si no encajan, no las metas: un título que promete "
+    "algo que el clip no enseña pierde al espectador en dos segundos."
+)
+
+
+def build_system_prompt(
+    rules: ProfileRules, *, vision: bool = False, keywords: bool = False
+) -> str:
+    """Prompt del sistema para el perfil y la modalidad indicados.
+
+    `keywords` dice si el usuario ha aportado términos. La regla que los
+    gobierna solo se añade cuando los hay: explicarle a un modelo cómo usar
+    una lista vacía es gastar atención en nada.
+    """
     intro = VISION_INTRO if vision else TEXT_INTRO
     modality_rules = VISION_RULES if vision else TEXT_RULES
 
+    # Las reglas del perfil, el idioma y la exigencia son una sola lista
+    # numerada: así ninguna se queda sin número al añadir o quitar otra.
+    guidance = [*rules.guidance, LANGUAGE_RULE]
+    if keywords:
+        guidance.append(KEYWORDS_RULE)
+    guidance.append(VISION_SELECTIVITY if vision else TEXT_SELECTIVITY)
+
     numbered_guidance = "\n".join(
-        f"{index}. {line}" for index, line in enumerate(rules.guidance, start=5)
+        f"{index}. {line}" for index, line in enumerate(guidance, start=5)
     )
 
     scoring = "\n".join(
@@ -94,8 +132,6 @@ REGLAS OBLIGATORIAS
 4. Un clip debe durar entre {rules.min_duration} y {rules.max_duration} segundos; \
 el punto óptimo está cerca de {rules.target_duration}.
 {numbered_guidance}
-{len(rules.guidance) + 5}. Escribe título, gancho y motivo en ESPAÑOL.
-{len(rules.guidance) + 6}. {VISION_SELECTIVITY if vision else TEXT_SELECTIVITY}
 
 PUNTUACIÓN (entero dentro de cada rango; no calcules el total, ya lo hace el sistema)
 {scoring}
@@ -104,12 +140,25 @@ Sé severo puntuando. Un clip mediocre debe quedar por debajo de \
 {rules.total_maximum // 2}."""
 
 
+def keywords_line(context: AnalysisContext) -> str | None:
+    """Las palabras clave del usuario, listas para la cabecera del mensaje.
+
+    Van en el mensaje y no en el prompt del sistema porque describen ESTE
+    vídeo, no cómo trabajar. Devuelve None si no hay ninguna, para que la
+    cabecera no arrastre una línea vacía.
+    """
+    if not context.keywords:
+        return None
+    return f"Palabras clave del usuario: {', '.join(context.keywords)}"
+
+
 def build_user_prompt(window: AnalysisWindow, context: AnalysisContext) -> str:
     """Presenta una ventana de segmentos numerados al modelo."""
     header = [
         f"Vídeo: {context.title}" if context.title else None,
         f"Autor: {context.author}" if context.author else None,
         f"Idioma: {context.language}" if context.language else None,
+        keywords_line(context),
         f"Fragmento {window.number}, de {timestamp(window.start)} a {timestamp(window.end)} "
         f"(índices {window.first_index}-{window.last_index}).",
     ]
@@ -145,6 +194,7 @@ def build_vision_prompt(
         f"Vídeo: {context.title}" if context.title else None,
         f"Autor: {context.author}" if context.author else None,
         f"Duración total: {timestamp(context.duration)}" if context.duration else None,
+        keywords_line(context),
     ]
 
     lines = []

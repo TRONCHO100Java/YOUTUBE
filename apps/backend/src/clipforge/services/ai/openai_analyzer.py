@@ -48,7 +48,10 @@ class OpenAIClipAnalyzer(ClipAnalyzer):
                 model=self.model,
                 temperature=0,
                 messages=[
-                    {"role": "system", "content": build_system_prompt(rules)},
+                    {
+                        "role": "system",
+                        "content": build_system_prompt(rules, keywords=bool(context.keywords)),
+                    },
                     {"role": "user", "content": build_user_prompt(window, context)},
                 ],
                 response_format={

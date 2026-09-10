@@ -11,6 +11,10 @@ interface Props {
 
 export function NewProjectForm({ onCreated }: Props) {
   const [url, setUrl] = useState("");
+  // Lo único que el sistema no puede deducir mirando el vídeo: quién sale y
+  // cómo se le busca. El título de YouTube casi nunca nombra a los
+  // streamers que aparecen, y es ese nombre el que se busca en Shorts.
+  const [keywords, setKeywords] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -21,8 +25,9 @@ export function NewProjectForm({ onCreated }: Props) {
     setSubmitting(true);
     setError(null);
     try {
-      await createProject(url.trim());
+      await createProject(url.trim(), keywords);
       setUrl("");
+      setKeywords("");
       onCreated();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se ha podido crear el proyecto");
@@ -51,6 +56,19 @@ export function NewProjectForm({ onCreated }: Props) {
           {submitting ? "Creando…" : "Generar clips"}
         </button>
       </div>
+
+      <input
+        type="text"
+        value={keywords}
+        onChange={(event) => setKeywords(event.target.value)}
+        placeholder="Opcional: de qué va y quién sale (Kai Cenat, Speed, Among Us)"
+        aria-label="Palabras clave del vídeo"
+        className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
+      />
+      <p className="mt-2 text-xs text-zinc-500">
+        Se usan para titular los clips con los nombres por los que la gente busca.
+        Sepáralas por comas.
+      </p>
 
       {error && (
         <p role="alert" className="mt-3 text-sm text-rose-400">

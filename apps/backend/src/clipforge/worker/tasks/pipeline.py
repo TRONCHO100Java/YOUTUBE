@@ -54,10 +54,12 @@ from clipforge.services.ai import (
     detect_profile,
     get_analyzer,
     get_block_analyzer,
+    parse_keywords,
     rules_for,
     select_clips,
     select_clips_from_blocks,
     suggestions_from_signals,
+    write_titles,
 )
 from clipforge.services.ai.chunking import to_analysis_segments
 from clipforge.services.download.base import VideoDownloader
@@ -89,6 +91,9 @@ def process_project(self: Any, project_id: str) -> dict[str, Any]:
     pid = uuid.UUID(project_id)
     log = logger.bind(project_id=project_id, task_id=self.request.id)
 
+    if _is_stale(pid, self.request.id, log):
+        return {"project_id": project_id, "status": "SKIPPED", "reason": "stale"}
+
     try:
         _download_stage(pid, log)
         _transcribe_stage(pid, log)
@@ -115,6 +120,39 @@ def process_project(self: Any, project_id: str) -> dict[str, Any]:
     _cleanup(pid, log, keep_source=None if renderable else True)
     log.info("pipeline.completed", status=status.value)
     return {"project_id": project_id, "status": status}
+
+
+def _task_is_stale(owner_task_id: str | None, task_id: str | None) -> bool:
+    """¿A esta tarea la ha sustituido otra sobre el mismo proyecto?
+
+    Reencolar un proyecto cuya tarea seguía en la cola deja dos mensajes para
+    el mismo vídeo, y el worker haría el trabajo entero dos veces seguidas.
+    `revoke` no lo resuelve: con `--pool=solo` el worker no lee los mensajes
+    de control mientras está trabajando, así que la cancelación puede llegar
+    después de que haya sacado la tarea.
+
+    La base de datos sí es fiable. El proyecto guarda el id de SU tarea, la
+    última que se encoló; cualquier otra que despierte con un id distinto
+    llega tarde y no debe rehacer nada.
+    """
+    # Sin id de tarea es una llamada directa (tests, consola): no hay dueño
+    # con quien comparar y el trabajo es justo el que se ha pedido.
+    if task_id is None or owner_task_id is None:
+        return False
+    return owner_task_id != str(task_id)
+
+
+def _is_stale(project_id: uuid.UUID, task_id: str | None, log: Any) -> bool:
+    """Comprueba contra la base de datos si esta tarea sigue siendo la vigente."""
+    with sync_session_scope() as session:
+        project = session.get(Project, project_id)
+        owner = project.task_id if project is not None else None
+
+    if not _task_is_stale(owner, task_id):
+        return False
+
+    log.info("pipeline.stale_task", owner_task_id=owner)
+    return True
 
 
 # --------------------------------------------------------------------- descarga
@@ -384,6 +422,7 @@ def _analyze_stage(project_id: uuid.UUID, log: Any) -> bool:
             language=transcript.language if transcript else None,
             profile=profile,
             duration=project.duration,
+            keywords=parse_keywords(project.keywords),
         )
         timeline = SignalTimeline.from_dict(project.signals) if project.signals else None
         video_relative = project.source_video_path
@@ -408,6 +447,11 @@ def _analyze_stage(project_id: uuid.UUID, log: Any) -> bool:
     )
 
     if suggestions:
+        # El titulado va aquí y no antes: solo tiene sentido sobre los clips
+        # que han sobrevivido al ranking, que son los que se van a publicar.
+        # Y va antes de guardar para que el título bueno sea el primero que
+        # ve el usuario, sin un parpadeo con el título viejo por medio.
+        suggestions = write_titles(suggestions, context)
         _save_candidates(project_id, suggestions, status=CandidateStatus.SELECTED)
         log.info(
             "pipeline.analysis_finished",

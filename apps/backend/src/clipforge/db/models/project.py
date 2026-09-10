@@ -43,6 +43,13 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_video_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     audio_path: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    #: Palabras que el usuario aporta al crear el proyecto: de que va el video,
+    #: quien sale, como se le busca. El pipeline no las puede deducir —el titulo
+    #: de YouTube rara vez nombra a los streamers que aparecen— y son justo lo
+    #: que hace que un titulo compita en busqueda. Se guardan tal y como se
+    #: escriben; separarlas en terminos es cosa de quien las usa.
+    keywords: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Id de la tarea Celery en curso, para poder cancelar o inspeccionar.
     task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

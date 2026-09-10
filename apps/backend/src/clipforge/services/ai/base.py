@@ -135,6 +135,27 @@ class ClipSuggestion:
 
 
 @dataclass(frozen=True, slots=True)
+class TitleBrief:
+    """Un clip ya elegido, tal y como se le presenta al redactor de títulos.
+
+    Es deliberadamente pobre: número, tiempos y lo poco que se sabe del clip.
+    El titulador no recibe la puntuación ni la rúbrica porque no tiene que
+    volver a juzgar nada —eso ya está decidido— y enseñarle notas solo le
+    daría motivos para discutirlas en lugar de escribir.
+    """
+
+    number: int
+    start: float
+    end: float
+    #: Qué pasa en el clip. Sale del análisis: su título o su justificación.
+    summary: str
+    #: El texto que ya va escrito en pantalla, para que el título no lo repita.
+    hook: str | None = None
+    #: Lo que se dice, si el clip tiene diálogo aprovechable.
+    excerpt: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisContext:
     """Metadatos del vídeo que ayudan al modelo a juzgar el contenido."""
 
@@ -143,6 +164,10 @@ class AnalysisContext:
     language: str | None = None
     #: Decide rúbrica y duraciones. Lo fija el pipeline tras transcribir.
     profile: ContentProfile = ContentProfile.TALKING
+    #: Términos que ha aportado el usuario: de qué va el vídeo y quién sale.
+    #: Es lo único que el sistema no puede deducir mirando el vídeo, y lo que
+    #: convierte un título descriptivo en uno que alguien busca.
+    keywords: tuple[str, ...] = ()
     duration: float | None = None
     extra: dict[str, str] = field(default_factory=dict)
 

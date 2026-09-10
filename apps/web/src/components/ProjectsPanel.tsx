@@ -7,7 +7,7 @@ import { ProjectCard } from "@/components/ProjectCard";
 import { usePolling } from "@/hooks/usePolling";
 import { listProjects } from "@/lib/api";
 import { POLL_INTERVAL_MS } from "@/lib/config";
-import type { Page, ProjectSummary } from "@/lib/types";
+import { isProjectRunning, type Page, type ProjectSummary } from "@/lib/types";
 
 /**
  * Formulario de creación y lista de proyectos.
@@ -22,6 +22,9 @@ export function ProjectsPanel() {
     POLL_INTERVAL_MS,
   );
   const projects = data?.items;
+  // El worker procesa un vídeo cada vez. Si alguno está en marcha, los que
+  // figuran en cola no están parados: están esperando su turno.
+  const workerBusy = projects?.some((project) => isProjectRunning(project.status)) ?? false;
 
   return (
     <>
@@ -45,7 +48,12 @@ export function ProjectsPanel() {
         {projects && projects.length > 0 && (
           <ul className="mt-3 space-y-2">
             {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} onChanged={refresh} />
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onChanged={refresh}
+                workerBusy={workerBusy}
+              />
             ))}
           </ul>
         )}

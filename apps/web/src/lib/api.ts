@@ -100,10 +100,26 @@ export function getReadiness(): Promise<Readiness> {
 }
 
 /** Crea un proyecto y encola su procesamiento. */
-export function createProject(url: string): Promise<ProjectDetail> {
+export function createProject(url: string, keywords?: string): Promise<ProjectDetail> {
   return apiFetch<ProjectDetail>("/api/projects", {
     method: "POST",
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, keywords: keywords?.trim() || null }),
+  });
+}
+
+/**
+ * Cambia las palabras clave de un proyecto ya creado.
+ *
+ * No relanza nada: para que surtan efecto hay que regenerar, y esa decisión
+ * es del usuario, que sabe si le compensa volver a pasar el vídeo entero.
+ */
+export function updateProjectKeywords(
+  id: string,
+  keywords: string,
+): Promise<ProjectDetail> {
+  return apiFetch<ProjectDetail>(`/api/projects/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ keywords }),
   });
 }
 

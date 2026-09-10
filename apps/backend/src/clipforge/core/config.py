@@ -169,6 +169,23 @@ class Settings(BaseSettings):
     #: Súbelo solo si usas un modelo grande, donde agrupar sale más barato.
     vision_blocks_per_request: int = 1
 
+    # --------------------------------------------------------------- titulos
+    #: El titulo que sale del analisis es un subproducto: el modelo esta
+    #: puntuando siete dimensiones y lo escribe de paso, asi que describe la
+    #: escena en vez de dar ganas de abrirla. Esta pasada lo reescribe sobre
+    #: los clips ya elegidos: una sola llamada por proyecto.
+    titles_enabled: bool = True
+    #: Donde corta el movil en el feed y en la busqueda de Shorts.
+    title_max_chars: int = 60
+    #: Variantes por clip. Con tres hay de donde elegir cuando alguna se pasa
+    #: de largo o repite el arranque de otra, sin encarecer la llamada.
+    title_variants: int = 3
+    #: Proveedor y modelo del titulado. Vacio = los generales. Merece la pena
+    #: apuntar esto a una API aunque el analisis corra en local: es una llamada
+    #: por proyecto y es el texto que decide si alguien abre el clip.
+    ai_title_provider: AIProvider | None = None
+    ai_title_model: str | None = None
+
     # ------------------------------------------------------- perfil de contenido
     content_profile: ContentProfileSetting = "auto"
     #: Por debajo de esta fracción de habla, el vídeo se trata como visual.

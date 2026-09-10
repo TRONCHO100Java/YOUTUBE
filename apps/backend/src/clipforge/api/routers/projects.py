@@ -15,7 +15,12 @@ from clipforge.api.schemas.candidate import (
 )
 from clipforge.api.schemas.clip import GeneratedClipRead
 from clipforge.api.schemas.common import Page
-from clipforge.api.schemas.project import ProjectCreate, ProjectDetail, ProjectSummary
+from clipforge.api.schemas.project import (
+    ProjectCreate,
+    ProjectDetail,
+    ProjectSummary,
+    ProjectUpdate,
+)
 from clipforge.api.schemas.transcript import TranscriptRead, TranscriptSegmentRead
 from clipforge.core.errors import ConflictError, NotFoundError, ValidationError
 from clipforge.core.logging import get_logger
@@ -49,6 +54,7 @@ async def create_project(payload: ProjectCreate, repo: ProjectRepo) -> ProjectDe
             source_url=ref.url,
             source_type=ref.source_type,
             status=ProjectStatus.CREATED,
+            keywords=_clean_keywords(payload.keywords),
         )
     )
     # Commit ANTES de encolar: si el worker recogiera la tarea antes de que la
@@ -85,6 +91,33 @@ async def list_projects(
 @router.get("/{project_id}", response_model=ProjectDetail, summary="Detalle de proyecto")
 async def get_project(project_id: uuid.UUID, repo: ProjectRepo) -> ProjectDetail:
     project = await _require(project_id, repo)
+    return ProjectDetail.from_model(project)
+
+
+@router.patch(
+    "/{project_id}",
+    response_model=ProjectDetail,
+    summary="Editar las palabras clave de un proyecto",
+)
+async def update_project(
+    project_id: uuid.UUID, payload: ProjectUpdate, repo: ProjectRepo
+) -> ProjectDetail:
+    """Cambia las palabras clave sin tocar el vídeo ya descargado.
+
+    No relanza nada por su cuenta: las palabras solo influyen en el
+    análisis, así que quien quiera aplicarlas a un proyecto terminado tiene
+    que pulsar Regenerar. Hacerlo aquí encolaría un vídeo entero por haber
+    corregido una errata.
+    """
+    project = await _require(project_id, repo)
+
+    if payload.keywords is not None:
+        project.keywords = _clean_keywords(payload.keywords)
+
+    await repo.session.commit()
+    await repo.session.refresh(project)
+
+    logger.info("project.updated", project_id=str(project_id))
     return ProjectDetail.from_model(project)
 
 
@@ -317,6 +350,18 @@ async def _require(project_id: uuid.UUID, repo: ProjectRepo) -> Project:
     if project is None:
         raise NotFoundError(f"Proyecto {project_id} no encontrado")
     return project
+
+
+def _clean_keywords(raw: str | None) -> str | None:
+    """Normaliza el campo libre de palabras clave.
+
+    Guardar "" en lugar de NULL haría que el prompt arrastrase una línea de
+    palabras clave vacía, que es peor que no tener ninguna: ocupa atención
+    del modelo sin decirle nada.
+    """
+    if raw is None:
+        return None
+    return raw.strip() or None
 
 
 def _enqueue(project_id: uuid.UUID) -> str:

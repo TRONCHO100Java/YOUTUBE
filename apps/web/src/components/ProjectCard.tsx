@@ -6,7 +6,11 @@ import { useState } from "react";
 import { ClipList } from "@/components/ClipList";
 import { RegenerateButton } from "@/components/RegenerateButton";
 import { retryProject } from "@/lib/api";
-import { PROJECT_STATUS_LABELS, type ProjectSummary } from "@/lib/types";
+import {
+  isProjectRunning,
+  PROJECT_STATUS_LABELS,
+  type ProjectSummary,
+} from "@/lib/types";
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return "—";
@@ -15,22 +19,18 @@ function formatDuration(seconds: number | null): string {
   return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
-/** Los estados intermedios son los que justifican seguir haciendo polling. */
-function isRunning(status: ProjectSummary["status"]): boolean {
-  return (
-    status !== "CREATED" &&
-    status !== "COMPLETED" &&
-    status !== "NEEDS_REVIEW" &&
-    status !== "FAILED"
-  );
-}
-
 interface Props {
   project: ProjectSummary;
   onChanged: () => void;
+  /**
+   * Hay otro proyecto pasando por el pipeline. El worker procesa un vídeo
+   * cada vez, así que esto es lo que separa "hay alguien delante" de
+   * "esto no lo ha cogido nadie", que piden cosas distintas al usuario.
+   */
+  workerBusy?: boolean;
 }
 
-export function ProjectCard({ project, onChanged }: Props) {
+export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
   const [retrying, setRetrying] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +41,10 @@ export function ProjectCard({ project, onChanged }: Props) {
 
   const failed = project.status === "FAILED";
   const completed = project.status === "COMPLETED";
+  // Encolado: la tarea está escrita en Redis y nadie la ha cogido todavía.
+  // Es un estado de espera legítimo, pero hasta ahora dejaba la tarjeta sin
+  // un solo botón, y un proyecto sin botones parece un proyecto roto.
+  const queued = project.status === "CREATED";
   // El pipeline llegó al final pero la IA no propuso nada. No es un fallo: hay
   // vídeo, hay señales y hay un editor esperando.
   const needsReview = project.status === "NEEDS_REVIEW";
@@ -74,7 +78,7 @@ export function ProjectCard({ project, onChanged }: Props) {
 
   const reprocessButton = (
     <RegenerateButton
-      label={failed || needsReview ? "Reintentar" : "Regenerar"}
+      label={queued ? "Reencolar" : failed || needsReview ? "Reintentar" : "Regenerar"}
       confirming={confirming}
       busy={retrying}
       onClick={handleReprocessClick}
@@ -82,7 +86,9 @@ export function ProjectCard({ project, onChanged }: Props) {
       title={
         completed
           ? "Vuelve a pasar el vídeo entero por el pipeline y sustituye los clips automáticos"
-          : undefined
+          : queued
+            ? "Vuelve a pedir turno. Úsalo solo si el worker se cayó con el proyecto en cola"
+            : undefined
       }
     />
   );
@@ -114,7 +120,7 @@ export function ProjectCard({ project, onChanged }: Props) {
               }
             >
               {PROJECT_STATUS_LABELS[project.status]}
-              {isRunning(project.status) && "…"}
+              {isProjectRunning(project.status) && "…"}
             </span>
             <span aria-hidden="true">·</span>
             <span>{formatDuration(project.duration)}</span>
@@ -127,6 +133,13 @@ export function ProjectCard({ project, onChanged }: Props) {
               title={project.error_message}
             >
               {project.error_message}
+            </p>
+          )}
+          {queued && (
+            <p className="mt-1 text-xs text-zinc-500">
+              {workerBusy
+                ? "Esperando turno: el worker está procesando otro proyecto y solo puede con uno a la vez."
+                : "Encolado. Si no arranca en unos segundos, comprueba que la ventana del worker siga abierta y pulsa Reencolar."}
             </p>
           )}
           {error && <p className="mt-1 text-xs text-rose-400">{error}</p>}
@@ -156,7 +169,7 @@ export function ProjectCard({ project, onChanged }: Props) {
           </button>
         )}
 
-        {(failed || completed || needsReview) && reprocessButton}
+        {(failed || completed || needsReview || queued) && reprocessButton}
       </div>
 
       {/* Se monta solo al desplegar: así no se piden los clips de cada

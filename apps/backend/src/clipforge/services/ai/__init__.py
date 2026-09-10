@@ -16,12 +16,14 @@ from clipforge.services.ai.base import (
     ClipSuggestion,
 )
 from clipforge.services.ai.factory import get_analyzer, get_block_analyzer
+from clipforge.services.ai.keywords import parse_keywords
 from clipforge.services.ai.profiles import ProfileRules, detect_profile, rules_for
 from clipforge.services.ai.selector import (
     select_clips,
     select_clips_from_blocks,
     suggestions_from_signals,
 )
+from clipforge.services.ai.titles import write_titles
 
 __all__ = [
     "AnalysisContext",
@@ -35,8 +37,10 @@ __all__ = [
     "detect_profile",
     "get_analyzer",
     "get_block_analyzer",
+    "parse_keywords",
     "rules_for",
     "select_clips",
     "select_clips_from_blocks",
     "suggestions_from_signals",
+    "write_titles",
 ]

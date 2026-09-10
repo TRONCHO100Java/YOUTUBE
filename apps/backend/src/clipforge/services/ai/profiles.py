@@ -118,7 +118,8 @@ def rules_for(profile: ContentProfile) -> ProfileRules:
             "Empieza en un momento fuerte: una afirmación rotunda, una pregunta, "
             "una confesión o un dato sorprendente. No empieces con relleno.",
             "Termina en un cierre natural, no a mitad de frase.",
-            "El gancho debe ser una cita textual del propio segmento inicial.",
+            "El gancho sale del propio segmento inicial: usa lo que se dice ahí, "
+            "traducido al inglés si el vídeo no está en inglés.",
         ),
         burn_subtitles=settings.burn_subtitles,
     )

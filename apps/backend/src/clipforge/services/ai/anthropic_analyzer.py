@@ -58,7 +58,7 @@ class AnthropicClipAnalyzer(ClipAnalyzer):
             message = client.messages.create(
                 model=self.model,
                 max_tokens=MAX_TOKENS,
-                system=build_system_prompt(rules),
+                system=build_system_prompt(rules, keywords=bool(context.keywords)),
                 messages=[{"role": "user", "content": build_user_prompt(window, context)}],
                 output_config={
                     "format": {"type": "json_schema", "schema": response_json_schema(rules)}

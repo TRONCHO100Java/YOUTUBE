@@ -103,7 +103,7 @@ def test_the_visual_rubric_does_not_ask_for_quotes() -> None:
     """Exigir una cita textual en un vídeo sin diálogo es pedir un imposible."""
     prompt = build_system_prompt(rules_for(ContentProfile.VISUAL), vision=True)
 
-    assert "cita textual" not in prompt
+    assert "segmento inicial" not in prompt
     assert "payoff_score" in prompt
     assert "value_score" not in prompt
 
@@ -111,8 +111,19 @@ def test_the_visual_rubric_does_not_ask_for_quotes() -> None:
 def test_the_talking_rubric_keeps_its_rules() -> None:
     prompt = build_system_prompt(rules_for(ContentProfile.TALKING))
 
-    assert "cita textual" in prompt
+    assert "segmento inicial" in prompt
     assert "value_score" in prompt
+
+
+def test_every_prompt_demands_english_titles() -> None:
+    """El título y el gancho se publican, así que van en inglés en las dos modalidades."""
+    for profile, vision in (
+        (ContentProfile.TALKING, False),
+        (ContentProfile.VISUAL, True),
+    ):
+        prompt = build_system_prompt(rules_for(profile), vision=vision)
+
+        assert "SIEMPRE EN INGLÉS" in prompt
 
 
 def test_the_visual_profile_uses_shorter_clips() -> None:

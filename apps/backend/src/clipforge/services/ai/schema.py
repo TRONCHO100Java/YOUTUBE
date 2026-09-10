@@ -34,9 +34,9 @@ class RawCandidateBase(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    title: str = Field(description="Título corto y atractivo, en español")
-    hook: str = Field(description="La frase o imagen de apertura que engancha")
-    reason: str = Field(description="Por qué este momento funcionaría como clip")
+    title: str = Field(description="Título corto y atractivo, EN INGLÉS")
+    hook: str = Field(description="La frase o imagen de apertura que engancha, EN INGLÉS")
+    reason: str = Field(description="Por qué este momento funcionaría como clip, en español")
 
     def score_for(self, field_name: str) -> int:
         """Puntuación de una dimensión, o 0 si el modelo la ha omitido."""

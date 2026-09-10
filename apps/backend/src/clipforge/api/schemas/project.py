@@ -15,6 +15,10 @@ from clipforge.db.models.enums import (
 )
 from clipforge.services.source.urls import MAX_URL_LENGTH
 
+#: Tope del campo de palabras clave. Da de sobra para una decena de
+#: términos y evita que alguien pegue ahí una transcripción entera.
+MAX_KEYWORDS_LENGTH = 500
+
 
 class ProjectCreate(BaseModel):
     """Cuerpo de POST /projects."""
@@ -25,6 +29,30 @@ class ProjectCreate(BaseModel):
         max_length=MAX_URL_LENGTH,
         description="URL del vídeo de YouTube a procesar",
         examples=["https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
+    )
+    keywords: str | None = Field(
+        None,
+        max_length=MAX_KEYWORDS_LENGTH,
+        description=(
+            "De qué va el vídeo y quién sale, separado por comas. Se usa para "
+            "escribir títulos con los nombres por los que la gente busca."
+        ),
+        examples=["Kai Cenat, Speed, Among Us"],
+    )
+
+
+class ProjectUpdate(BaseModel):
+    """Cuerpo de PATCH /projects/{id}.
+
+    Existe por una razón concreta: las palabras clave se suelen recordar
+    DESPUÉS de pegar la URL, y sin esto la única forma de añadirlas sería
+    borrar el proyecto y volver a descargar el vídeo entero.
+    """
+
+    keywords: str | None = Field(
+        None,
+        max_length=MAX_KEYWORDS_LENGTH,
+        description="Reemplaza las palabras clave; cadena vacía las borra",
     )
 
 
@@ -51,6 +79,8 @@ class ProjectDetail(ProjectSummary):
     """Vista de detalle, la que consulta el polling del frontend."""
 
     author: str | None = None
+    #: Lo que escribió el usuario sobre el vídeo, tal cual, para poder editarlo.
+    keywords: str | None = None
     progress: float = Field(0.0, ge=0.0, le=1.0, description="Avance 0..1 del pipeline")
     #: Perfil detectado tras transcribir; decide rúbrica y duraciones.
     content_profile: ContentProfile | None = None
