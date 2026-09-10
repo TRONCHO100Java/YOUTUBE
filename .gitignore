@@ -25,8 +25,17 @@ out/
 npm-debug.log*
 
 # ------------------------------------------------------------------- storage
+# Lo que hay dentro pesa gigas y se regenera solo: videos descargados, audio,
+# clips y transcripciones. La ESTRUCTURA si se versiona —con .gitkeep— para que
+# al clonar el proyecto arranque sin tener que crear las carpetas a mano.
 storage/*
 !storage/.gitkeep
+!storage/projects/
+!storage/export/
+storage/projects/*
+storage/export/*
+!storage/projects/.gitkeep
+!storage/export/.gitkeep
 
 # --------------------------------------------------------------------- otros
 .DS_Store
