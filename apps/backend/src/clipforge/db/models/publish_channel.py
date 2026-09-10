@@ -32,7 +32,11 @@ class PublishChannel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     #: URL del canal. Es lo que se abre para subir, asi que se guarda tal cual
     #: la pega el usuario en vez de reconstruirla desde un id.
-    url: Mapped[str] = mapped_column(Text, nullable=False)
+    #:
+    #: Opcional a proposito: la linea editorial se decide antes de que el
+    #: canal exista en YouTube. Obligarla forzaria a inventarse una URL
+    #: falsa para poder empezar a repartir clips.
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Id "UC..." si se ha podido resolver. Sirve para distinguir dos canales
     #: con el mismo nombre; no es imprescindible para subir.
     youtube_channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -257,7 +257,7 @@ export function listPublishChannels(): Promise<PublishChannel[]> {
 
 export function createPublishChannel(input: {
   name: string;
-  url: string;
+  url?: string;
   niche?: string;
   people?: string[];
   topics?: string[];
@@ -270,7 +270,7 @@ export function createPublishChannel(input: {
     method: "POST",
     body: JSON.stringify({
       name: input.name,
-      url: input.url,
+      url: input.url?.trim() || null,
       niche: input.niche?.trim() || null,
       people: input.people ?? [],
       topics: input.topics ?? [],

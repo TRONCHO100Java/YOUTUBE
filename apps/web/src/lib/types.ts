@@ -197,7 +197,8 @@ export interface WatchedChannel {
 export interface PublishChannel {
   id: string;
   name: string;
-  url: string;
+  /** null mientras el canal no exista todavía en YouTube. */
+  url: string | null;
   enabled: boolean;
   youtube_channel_id: string | null;
   /** Qué acepta este canal. Vacío = cualquiera. */

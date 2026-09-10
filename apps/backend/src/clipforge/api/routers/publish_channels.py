@@ -47,7 +47,7 @@ async def create_channel(payload: PublishChannelCreate, session: DbSession) -> P
     """Registra un canal propio y qué contenido va en él."""
     channel = PublishChannel(
         name=payload.name.strip(),
-        url=payload.url.strip(),
+        url=(payload.url or "").strip() or None,
         niche=(payload.niche or "").strip() or None,
         people=payload.people or None,
         topics=payload.topics or None,
@@ -73,7 +73,7 @@ async def update_channel(
     if payload.name is not None:
         channel.name = payload.name.strip()
     if payload.url is not None:
-        channel.url = payload.url.strip()
+        channel.url = payload.url.strip() or None
     if payload.enabled is not None:
         channel.enabled = payload.enabled
     if payload.niche is not None:

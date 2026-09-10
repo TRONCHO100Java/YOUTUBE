@@ -44,11 +44,11 @@ class PublishChannelCreate(PublishChannelBase):
     """Cuerpo de POST /publish-channels."""
 
     name: str = Field(..., min_length=1, max_length=120, examples=["Speed Clips"])
-    url: str = Field(
-        ...,
+    url: str | None = Field(
+        None,
         min_length=1,
         max_length=MAX_URL,
-        description="URL del canal de YouTube donde se sube",
+        description="URL del canal. Se puede dejar para despues",
         examples=["https://www.youtube.com/@IShowSpeed"],
     )
 

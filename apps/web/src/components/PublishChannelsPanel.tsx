@@ -57,7 +57,9 @@ export function PublishChannelsPanel() {
 
   async function handleAdd(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || name.trim().length === 0 || url.trim().length === 0) return;
+    // La URL no se exige: la línea editorial se decide antes de que el canal
+    // exista en YouTube, y se puede empezar a apartarle clips desde ya.
+    if (busy || name.trim().length === 0) return;
 
     setBusy(true);
     setFormError(null);
@@ -121,7 +123,7 @@ export function PublishChannelsPanel() {
             type="text"
             value={url}
             onChange={(event) => setUrl(event.target.value)}
-            placeholder="URL del canal en YouTube"
+            placeholder="URL del canal (puedes dejarla para luego)"
             aria-label="URL del canal"
             className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400/30"
           />
@@ -166,7 +168,7 @@ export function PublishChannelsPanel() {
           />
           <button
             type="submit"
-            disabled={busy || name.trim().length === 0 || url.trim().length === 0}
+            disabled={busy || name.trim().length === 0}
             className="rounded-xl border border-white/10 px-5 py-2.5 text-sm text-zinc-200 transition hover:border-white/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? "Añadiendo…" : "Añadir"}
@@ -206,8 +208,12 @@ export function PublishChannelsPanel() {
                     </span>
                   </p>
                   <p className="mt-0.5 truncate text-xs text-zinc-500">
+                    {/* Los temas cuentan como filtro: sin pintarlos, un canal
+                        que solo filtra por tema decia "acepta cualquier clip",
+                        que es justo lo contrario de lo que hace. */}
                     {[
                       channel.people.length > 0 ? channel.people.join(", ") : null,
+                      channel.topics.length > 0 ? channel.topics.join(", ") : null,
                       channel.kinds.length > 0 ? channel.kinds.join(" · ") : null,
                       channel.niche,
                       channel.min_score > 0 ? `nota ≥ ${channel.min_score}` : null,
@@ -217,14 +223,21 @@ export function PublishChannelsPanel() {
                   </p>
                 </div>
 
-                <a
-                  href={channel.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
-                >
-                  Abrir
-                </a>
+                {/* Un enlace a ninguna parte seria peor que no tenerlo: */}
+                {channel.url ? (
+                  <a
+                    href={channel.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+                  >
+                    Abrir
+                  </a>
+                ) : (
+                  <span className="shrink-0 rounded-lg border border-dashed border-white/10 px-3 py-1.5 text-xs text-zinc-600">
+                    Sin URL
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() =>
