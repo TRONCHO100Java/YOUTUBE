@@ -111,6 +111,8 @@ class RenderSetup:
     burn_subtitles: bool
     #: Si en este perfil de contenido tiene sentido quitar los silencios.
     trim_silences: bool = True
+    #: Duración mínima del perfil. El recorte no puede bajar de aquí.
+    min_clip_duration: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +146,7 @@ def build_setup(
     words: list[Word] | None = None,
     trim_silences: bool = True,
     peaks: list[Peak] | None = None,
+    min_clip_duration: float = 0.0,
 ) -> RenderSetup:
     """Prepara encoder y encuadre para todos los clips de un proyecto.
 
@@ -179,6 +182,7 @@ def build_setup(
         fps=probed.fps,
         burn_subtitles=burn_subtitles,
         trim_silences=trim_silences,
+        min_clip_duration=min_clip_duration,
     )
 
 
@@ -246,6 +250,9 @@ def plan_edit(plan: ClipRenderPlan, setup: RenderSetup) -> EditPlan:
             padding=settings.trim_padding_seconds,
             min_beat=settings.trim_min_beat_seconds,
             max_removed_ratio=settings.trim_max_removed_ratio,
+            # El mínimo del perfil manda también DESPUÉS de recortar: si no,
+            # el silencio deja el clip por debajo de lo que se configuró.
+            min_duration=setup.min_clip_duration,
         ),
     )
 

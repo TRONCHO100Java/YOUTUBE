@@ -131,6 +131,7 @@ def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any, uuid.UUID]:
         words=words,
         trim_silences=rules.trim_silences,
         peaks=peaks,
+        min_clip_duration=rules.min_duration,
     )
     return plan, setup, project_id
 

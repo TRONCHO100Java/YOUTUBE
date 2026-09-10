@@ -60,6 +60,12 @@ class TrimRules:
     min_beat: float = 0.4
     #: Fracción máxima del clip que se puede eliminar.
     max_removed_ratio: float = 0.35
+    #: Suelo duro: por corto que quede el silencio, el clip no baja de aquí.
+    #: Sin esto, un candidato de 32 s con cuatro pausas acababa en 26 y se
+    #: publicaba por debajo del mínimo que alguien había configurado —el
+    #: mínimo se comprobaba ANTES de recortar, así que dejaba de significar
+    #: lo que decía.
+    min_duration: float = 0.0
 
     @property
     def min_removable(self) -> float:
@@ -87,13 +93,22 @@ def plan_trim(
     if not inside:
         return EditPlan.single(start, end)
 
-    # Las puntas y el interior no compiten por el mismo presupuesto, y es
-    # deliberado. Quitar el silencio de delante y de detrás no es editar el
-    # contenido: es elegir bien la entrada y la salida, que es lo primero
-    # que hace cualquier montador. Lo que se acota es cuánto se puede
-    # quitar POR DENTRO, que ahí sí se está tocando el discurso.
-    edges = _edge_cuts(inside, start=start, end=end, rules=rules)
-    inner = _within_budget(_inner_cuts(inside, rules=rules), budget=span * rules.max_removed_ratio)
+    # Tope duro: lo que se puede quitar sin bajar del mínimo. Manda sobre
+    # todo lo demás, puntas incluidas, porque un clip por debajo del mínimo
+    # no se publica y da igual lo bien recortado que esté.
+    removable = max(0.0, span - rules.min_duration)
+
+    # Dentro de ese tope, las puntas y el interior no compiten por el mismo
+    # presupuesto, y es deliberado. Quitar el silencio de delante y de
+    # detrás no es editar el contenido: es elegir bien la entrada y la
+    # salida, que es lo primero que hace cualquier montador. Lo que se acota
+    # aparte es cuánto se quita POR DENTRO, que ahí sí se toca el discurso.
+    edges = _within_budget(_edge_cuts(inside, start=start, end=end, rules=rules), budget=removable)
+    spent = sum(cut[1] - cut[0] for cut in edges)
+    inner = _within_budget(
+        _inner_cuts(inside, rules=rules),
+        budget=min(span * rules.max_removed_ratio, removable - spent),
+    )
 
     cuts = sorted([*edges, *inner])
     if not cuts:

@@ -318,20 +318,21 @@ class Settings(BaseSettings):
 
     # ---------------------------------------------------------------- clips
     max_clips_per_project: int = 5
-    #: Duraciones pensadas para Shorts, no para YouTube largo. El punto
-    #: optimo baja de 45 a 30 s: un clip mas corto se ve entero, y verlo
-    #: entero es lo que decide si se ensena a mas gente. El maximo sigue
-    #: dando aire a un momento que de verdad lo necesite.
-    min_clip_duration: int = 15
-    max_clip_duration: int = 60
-    target_clip_duration: int = 30
+    #: Por debajo de 30 s no da tiempo a contar nada con remate, asi que ese
+    #: es el suelo. El techo de 2 minutos deja sitio a un momento que de
+    #: verdad lo necesite, pero el OPTIMO sigue bajo a proposito: un clip
+    #: que se ve entero es lo que decide si se ensena a mas gente, y el
+    #: porcentaje visto cae rapido a partir del minuto.
+    min_clip_duration: int = 30
+    max_clip_duration: int = 120
+    target_clip_duration: int = 40
     # Duraciones del perfil visual: un gag se agota antes que una explicacion,
     # asi que baja con el resto y se queda por debajo del hablado. Cuando el
     # maximo hablado bajo a 60 los dos perfiles se igualaron, y un perfil que
     # existe para ser mas corto no puede permitir lo mismo que el otro.
-    visual_min_clip_duration: int = 10
-    visual_max_clip_duration: int = 45
-    visual_target_clip_duration: int = 22
+    visual_min_clip_duration: int = 30
+    visual_max_clip_duration: int = 90
+    visual_target_clip_duration: int = 35
     #: Escribe el gancho del clip arriba, en los primeros segundos. Es lo
     #: único escrito que lleva un clip sin diálogo, y donde se decide si
     #: alguien sigue mirando.

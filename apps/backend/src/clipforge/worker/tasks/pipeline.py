@@ -684,6 +684,7 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
         words=words,
         trim_silences=rules.trim_silences,
         peaks=peaks,
+        min_clip_duration=rules.min_duration,
     )
     log.info("pipeline.render_started", clips=len(plans), encoder=setup.encoder.name)
 

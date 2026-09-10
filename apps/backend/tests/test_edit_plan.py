@@ -240,3 +240,34 @@ def test_the_story_can_tighten_the_entry_but_not_stretch_it() -> None:
 
     assert story_bounds(tightened) == (14.0, 30.0)
     assert story_bounds(stretched)[0] == 10.0
+
+
+# ------------------------------------------------- el minimo manda al recortar
+def test_the_trim_never_leaves_the_clip_under_the_minimum() -> None:
+    """El mínimo se comprobaba ANTES de recortar, así que no significaba nada.
+
+    Un candidato de 32 s con pausas acababa en 26 y se publicaba por debajo
+    del mínimo que alguien había configurado.
+    """
+    rules = TrimRules(
+        min_gap=0.5, padding=0.1, min_beat=0.4, max_removed_ratio=0.9, min_duration=30.0
+    )
+    # Habla al principio y al final, con un hueco enorme en medio.
+    plan = plan_trim(speech((10.0, 20.0), (35.0, 42.0)), start=10.0, end=42.0, rules=rules)
+
+    assert plan.duration >= 30.0
+
+
+def test_a_clip_already_at_the_minimum_is_not_touched() -> None:
+    rules = TrimRules(min_gap=0.5, padding=0.1, min_beat=0.4, min_duration=30.0)
+    plan = plan_trim(speech((10.0, 18.0), (25.0, 40.0)), start=10.0, end=40.0, rules=rules)
+
+    assert plan.is_continuous is True
+
+
+def test_without_a_minimum_the_trim_is_free() -> None:
+    """El suelo es opcional: quien no lo configura, no lo sufre."""
+    rules = TrimRules(min_gap=0.5, padding=0.1, min_beat=0.4, max_removed_ratio=0.9)
+    plan = plan_trim(speech((10.0, 20.0), (35.0, 42.0)), start=10.0, end=42.0, rules=rules)
+
+    assert plan.duration < 30.0
