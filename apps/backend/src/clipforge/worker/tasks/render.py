@@ -32,6 +32,7 @@ from clipforge.services.ai import rules_for
 from clipforge.services.render_clip import ClipRenderPlan, build_setup
 from clipforge.worker.celery_app import celery_app
 from clipforge.worker.tasks.pipeline import (
+    clip_peaks,
     export_project_clips,
     render_and_store,
     subtitle_segments,
@@ -112,6 +113,7 @@ def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any, uuid.UUID]:
         burn = rules.burn_subtitles
         segments = subtitle_segments(session, project_id)
         words = transcript_words(session, project_id)
+        peaks = clip_peaks(project.signals)
 
     source = absolute_from_storage(video_relative)
     if not source.is_file():
@@ -128,6 +130,7 @@ def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any, uuid.UUID]:
         sample_at=plan.start,
         words=words,
         trim_silences=rules.trim_silences,
+        peaks=peaks,
     )
     return plan, setup, project_id
 

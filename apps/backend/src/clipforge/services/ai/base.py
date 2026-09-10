@@ -130,6 +130,9 @@ class ClipSuggestion:
     #: Cómo se cuenta el clip: por dónde empieza de verdad, qué notas de
     #: contexto lleva y dónde cae el remate. Lo decide el montador.
     story: dict[str, Any] | None = None
+    #: De qué va: nicho, quién sale, temas y clase de momento. Es lo que
+    #: permite repartir los clips entre canales sin abrirlos uno a uno.
+    tags: dict[str, Any] | None = None
     source: CandidateSource = CandidateSource.AI
     #: Puntuación directa, para los candidatos que no tienen desglose.
     signal_score: float | None = None

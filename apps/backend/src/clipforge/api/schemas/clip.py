@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -52,6 +53,9 @@ class GeneratedClipRead(BaseModel):
     #: Rendimiento real. Es lo unico que puede decir si la nota acerto.
     view_count: int | None
     like_count: int | None
+    #: Qué le pasa al fichero, mirado tras renderizar. None en los clips
+    #: generados antes de que existiera la puerta de calidad.
+    quality: dict[str, Any] | None
 
     @classmethod
     def from_model(cls, clip: object) -> GeneratedClipRead:
@@ -82,4 +86,5 @@ class GeneratedClipRead(BaseModel):
             privacy_status=clip.privacy_status,  # type: ignore[attr-defined]
             view_count=clip.view_count,  # type: ignore[attr-defined]
             like_count=clip.like_count,  # type: ignore[attr-defined]
+            quality=clip.quality,  # type: ignore[attr-defined]
         )

@@ -45,6 +45,7 @@ def render_vertical_clip(
     start: float,
     end: float,
     beats: Sequence[tuple[float, float]] | None = None,
+    zoom: str | None = None,
     subtitles: Path | None = None,
     crop: CropFilter | None = None,
     encoder: EncoderProfile | None = None,
@@ -55,6 +56,7 @@ def render_vertical_clip(
         beats: tramos `(inicio, fin)` del original que se conservan, en
             tiempos absolutos. Con None —o con uno solo— el clip es el
             rango continuo de siempre y se usa el camino de siempre.
+        zoom: filtro `zoompan` ya montado, o None para no acercar nada.
         subtitles: `.ass` a quemar. Si es None, el clip sale sin subtítulos.
         crop: ventana o plan de recorte. Si es None, se centra.
 
@@ -85,6 +87,11 @@ def render_vertical_clip(
         # del original y el clip sale deformado.
         "setsar=1",
     ]
+    # El acercamiento va ANTES de los subtítulos, y el orden no es un
+    # detalle: al revés escalaría también el texto, que se vería crecer y
+    # encoger con cada énfasis. El texto tiene que quedarse quieto.
+    if zoom is not None:
+        filters.append(zoom)
     if subtitles is not None:
         # Filtro `ass` en lugar de `subtitles`: el .ass ya trae su estilo y su
         # resolución declarada, así que no hace falta force_style y el resultado

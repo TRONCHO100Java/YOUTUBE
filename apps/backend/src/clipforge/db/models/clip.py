@@ -74,6 +74,9 @@ class ClipCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: contexto lleva y donde cae el remate. Se guarda para poder repetir un
     #: render identico sin volver a llamar al montador.
     story: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    #: De que va el clip: nicho, quien sale, temas y clase de momento. Es
+    #: lo que permite repartirlos entre canales sin abrirlos uno a uno.
+    tags: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     # Desglose de viralidad (total = 100).
     score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
@@ -146,6 +149,11 @@ class GeneratedClip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: parte se quedo dentro, y desde donde se corrige.
     crop_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     crop_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    #: Que le pasa al fichero ya escrito. Las demas capas comprueban
+    #: intenciones; esta comprueba el MP4, que es donde se ven los fallos
+    #: que salen de un pipeline en el que nada ha fallado.
+    quality: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     #: Id del video en YouTube, si se ha subido. Es la unica prueba de que
     #: este fichero salio de aqui, y la llave con la que se le piden luego las

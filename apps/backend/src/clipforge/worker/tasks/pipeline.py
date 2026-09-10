@@ -61,13 +61,14 @@ from clipforge.services.ai import (
     select_clips,
     select_clips_from_blocks,
     suggestions_from_signals,
+    tag_clips,
     write_story,
     write_titles,
 )
 from clipforge.services.ai.chunking import to_analysis_segments
 from clipforge.services.download.base import VideoDownloader
 from clipforge.services.download.ytdlp import YtDlpDownloader
-from clipforge.services.edit import Word, words_from_segments
+from clipforge.services.edit import Peak, Word, peaks_from_signals, words_from_segments
 from clipforge.services.export import ClipExport, SourceCredit, export_project
 from clipforge.services.render_clip import ClipRenderPlan, RenderSetup, build_setup, render_clip
 from clipforge.services.signals import SignalTimeline, build_timeline
@@ -465,6 +466,9 @@ def _analyze_stage(project_id: uuid.UUID, log: Any) -> bool:
         # el titulado necesita saber cuál es para no repetirlo en el título.
         suggestions = [_with_story(clip, context) for clip in suggestions]
         suggestions = write_titles(suggestions, context)
+        # Etiquetar va al final: para entonces el clip ya tiene su título
+        # bueno, que es de lo poco que el etiquetador puede leer.
+        suggestions = _with_tags(suggestions, context)
         _save_candidates(project_id, suggestions, status=CandidateStatus.SELECTED)
         log.info(
             "pipeline.analysis_finished",
@@ -513,6 +517,15 @@ def _with_story(clip: ClipSuggestion, context: AnalysisContext) -> ClipSuggestio
         story=story.as_dict(),
         hook=rewritten or clip.hook,
     )
+
+
+def _with_tags(clips: list[ClipSuggestion], context: AnalysisContext) -> list[ClipSuggestion]:
+    """Pone a cada clip de qué va, para poder repartirlos por canales."""
+    tags = tag_clips(clips, context)
+    return [
+        clip if tag.is_empty else replace(clip, tags=tag.as_dict())
+        for clip, tag in zip(clips, tags, strict=True)
+    ]
 
 
 def _run_analysis(
@@ -607,6 +620,7 @@ def _save_candidates(
                     hashtags=list(item.hashtags) or None,
                     judge_scores=item.judge_scores,
                     story=item.story,
+                    tags=item.tags,
                     score=item.score,
                     hook_score=item.scores.hook if item.scores else None,
                     curiosity_score=item.scores.curiosity if item.scores else None,
@@ -655,6 +669,7 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
         ]
         segments = subtitle_segments(session, project_id)
         words = transcript_words(session, project_id)
+        peaks = clip_peaks(project.signals)
         project.status = ProjectStatus.GENERATING_CLIPS
 
     if not plans:
@@ -668,6 +683,7 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
         sample_at=plans[0].start,
         words=words,
         trim_silences=rules.trim_silences,
+        peaks=peaks,
     )
     log.info("pipeline.render_started", clips=len(plans), encoder=setup.encoder.name)
 
@@ -747,6 +763,17 @@ def render_and_store(plan: ClipRenderPlan, setup: RenderSetup) -> None:
     update_candidate(plan.candidate_id, status=CandidateStatus.RENDERING, error_message=None)
     result = render_clip(plan, setup)
 
+    # La puerta de calidad AVISA, no borra. Un clip con problemas se marca y
+    # se publica igual si el usuario quiere: tirarlo repetiria el error de
+    # las primeras fases, cuando un analisis sin resultados daba el proyecto
+    # por fallido y se perdia la descarga entera. Quien decide es quien mira.
+    if not result.quality.publishable:
+        logger.warning(
+            "render.quality_issues",
+            candidate_id=str(plan.candidate_id),
+            issues=result.quality.summary,
+        )
+
     with sync_session_scope() as session:
         session.execute(
             delete(GeneratedClip).where(GeneratedClip.candidate_id == plan.candidate_id)
@@ -767,6 +794,7 @@ def render_and_store(plan: ClipRenderPlan, setup: RenderSetup) -> None:
                 encoder=result.encoder,
                 crop_x=result.crop_x,
                 crop_width=result.crop_width,
+                quality=result.quality.to_dict(),
             )
         )
         candidate = session.get(ClipCandidate, plan.candidate_id)
@@ -783,6 +811,18 @@ def subtitle_segments(session: Session, project_id: uuid.UUID) -> list[SourceSeg
         SourceSegment(start=row.start_time, end=row.end_time, text=row.text)
         for row in _transcript_rows(session, project_id)
     ]
+
+
+def clip_peaks(signals: dict[str, Any] | None) -> list[Peak]:
+    """Picos de volumen del vídeo, de las señales ya medidas.
+
+    Se miden desde la fase 7 para alimentar el análisis visual y la línea
+    de tiempo del editor. Aquí sirven para una tercera cosa: colocar los
+    acercamientos donde de verdad pasa algo.
+    """
+    if not signals:
+        return []
+    return peaks_from_signals(signals.get("peaks") or [])
 
 
 def transcript_words(session: Session, project_id: uuid.UUID) -> list[Word]:

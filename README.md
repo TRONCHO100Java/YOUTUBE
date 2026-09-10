@@ -919,7 +919,87 @@ criterio, y el criterio lo pone el modelo: `AI_STORY_PROVIDER`.
 Lo que el montador **sí** aporta con cualquier modelo es apretar la entrada y
 marcar el remate, porque eso son números y no juicio.
 
-## 16. Vídeos que no hablan
+## 16. Efectos donde de verdad pasa algo
+
+La idea de partida era que un modelo decidiera dónde poner cada zoom. Se descartó
+por una razón medida: el modelo local puntúa cinco clips casi idénticos y
+sustituye una cita textual por una descripción (§15). Un motor caro que le
+pregunte dónde acercar la cámara pondría el zoom en el sitio equivocado, y **un
+efecto mal puesto es peor que ningún efecto**.
+
+Así que los efectos no se preguntan: se **miden**. Desde la fase 7 hay una curva
+de volumen con sus picos y su prominencia, y un pico es exactamente lo que es un
+golpe, una risa o un grito. Un acercamiento sobre el pico real está motivado por
+el contenido; uno colocado donde lo dijo un modelo es decoración — y decoración
+es justo lo que YouTube llama contenido reutilizado.
+
+Tres reglas separan el montaje del parpadeo:
+
+- **Pocos** (`ZOOM_MAX_PUNCHES`). Si todo se subraya, no se subraya nada.
+- **Separados** (`ZOOM_MIN_SPACING_SECONDS`). Dos seguidos son un temblor.
+- **Fuera de los extremos.** El primer segundo lo ocupa el gancho y necesita el
+  plano limpio; el último es el remate y moverlo lo estropea.
+
+Los picos se traducen por el `EditPlan` (§14), igual que los rótulos: uno que cae
+dentro de un trozo eliminado se descarta, porque el golpe que lo justificaba ya
+no está en el vídeo.
+
+En ffmpeg es un `zoompan` con una expresión trapezoidal —sube, se mantiene,
+baja— escrita sobre el contador de fotogramas y no sobre el tiempo, porque las
+variables de tiempo de ese filtro han ido cambiando de nombre entre versiones.
+**Va antes de los subtítulos**, y el orden no es un detalle: al revés escalaría
+también el texto, que se vería crecer y encoger con cada énfasis.
+
+## 17. La puerta de calidad
+
+Todo lo anterior comprueba **intenciones**: que el juez puntúe, que el montador
+proponga, que el plan cuadre. Nada miraba el MP4 ya escrito, y ahí es donde se
+ven los fallos que salen de un pipeline en el que **ningún paso ha fallado**: un
+clip de seis segundos, uno de dos minutos, uno que salió en negro, uno que se
+publica sin una sola palabra en pantalla.
+
+| Se detecta | Gravedad |
+|---|---|
+| Dura menos de 8 s | No publicable |
+| Pesa sospechosamente poco (render en negro) | No publicable |
+| No es vertical | No publicable |
+| Ni subtítulos ni gancho: sale mudo | No publicable |
+| Dura más de 90 s | Aviso |
+| Clip hablado sin subtítulos | Aviso |
+
+**Avisa, no borra.** Un clip con problemas se marca y se publica igual si el
+usuario quiere: tirarlo repetiría el error de las primeras fases, cuando un
+análisis sin resultados daba el proyecto por fallido y se perdía la descarga
+entera. Quien decide es quien mira.
+
+## 18. Etiquetado: varios canales sin mezclar
+
+Un canal de Shorts funciona cuando lo que publica se parece entre sí. Mezclar un
+gag de un streamer con un recorte de un pódcast de negocios no es variedad: es un
+canal sin tema, y el algoritmo tarda mucho más en entender a quién enseñárselo.
+
+Cada clip lleva **nicho**, **quién sale**, **temas** y **clase de momento** — esta
+última de un vocabulario cerrado (`reaccion`, `fail`, `gag`, `reto`, `consejo`,
+`confesion`, `discusion`, `habilidad`, `sorpresa`). Cerrado a propósito: con la
+lista abierta cada clip inventa su etiqueta —*funny moment*, *hilarious bit*,
+*comedy gold*— y entonces no agrupan nada, que era para lo que estaban.
+
+Las etiquetas se normalizan al guardarlas (minúsculas, sin acentos ni signos)
+porque su único uso es agrupar: «Kai Cenat», «kai cenat» y «Kai-Cenat» tienen que
+caer en el mismo montón.
+
+**El nicho es del proyecto, no del clip.** Medido sobre un vídeo real de
+recopilación, el modelo devolvió `fail`, `gag`, `reto`, `gag`, `gag`: un nicho
+casi por clip, con el que no se puede repartir nada. Los cinco clips salen de la
+misma fuente y van al mismo canal, así que gana el más votado. La clase de
+momento sí varía —ahí estaba la diferencia real— y esa se respeta clip a clip.
+
+Esta es, de las cuatro llamadas de IA que no son el detector, **la única donde un
+modelo pequeño se defiende bien**: reconocer que un vídeo va de streamers y que
+sale Kai Cenat no es criterio, es lectura. Sobre un proyecto real etiquetó los
+cinco clips como `motivacion` / `kai cenat` / `consejo`, consistentes entre sí.
+
+## 19. Vídeos que no hablan
 
 El análisis de la sección anterior solo lee texto, y hay vídeos que no lo tienen. Sobre una
 recopilación de comedia física de 8:39, Whisper detectó "coreano" con un 47 % de confianza y
@@ -973,7 +1053,7 @@ fallido. Se guardan los mejores bloques como candidatos `SIGNAL` sin puntuar, el
 pasa a `NEEDS_REVIEW` y el vídeo original se conserva pase lo que pase con
 `KEEP_SOURCE_VIDEO`. El editor manual hace el resto.
 
-## 17. Editor manual
+## 20. Editor manual
 
 `/projects/{id}` abre el vídeo original con la línea de tiempo de señales debajo, en cinco
 carriles sobre el mismo eje: volumen, movimiento, cortes, tramos propuestos y clips ya
@@ -992,7 +1072,7 @@ el modelo, no una regla para la persona que está mirando el vídeo. Y un reproc
 sustituye lo que produjo la máquina (`AI` y `SIGNAL`) pero nunca borra un candidato
 `MANUAL`.
 
-## 18. Almacenamiento
+## 21. Almacenamiento
 
 ```
 storage/projects/{project_id}/
@@ -1047,7 +1127,7 @@ que arrancas: uvicorn, celery, pytest y alembic se lanzan desde sitios distintos
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 
-## 19. Migraciones
+## 22. Migraciones
 
 ```powershell
 cd apps\backend
@@ -1058,7 +1138,7 @@ cd apps\backend
 
 Revisa siempre el fichero generado antes de aplicarlo.
 
-## 20. Hoja de ruta
+## 23. Hoja de ruta
 
 - [x] **FASE 1** — infraestructura, API, BD, worker, frontend
 - [x] **FASE 2** — descarga con yt-dlp y creación de proyectos
@@ -1081,3 +1161,5 @@ Revisa siempre el fichero generado antes de aplicarlo.
 - [x] **FASE 19** — EditPlan y eliminación del tiempo muerto
 - [x] **FASE 20** — detector y juez separados, con rúbrica de Shorts
 - [x] **FASE 21** — montador: entrada apretada, contexto en pantalla y remate
+- [x] **FASE 22** — acercamientos sobre los picos de volumen medidos
+- [x] **FASE 23** — puerta de calidad y etiquetado por nicho y personaje

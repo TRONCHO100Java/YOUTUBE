@@ -23,6 +23,13 @@ from clipforge.core.logging import get_logger
 from clipforge.core.storage import ProjectStorage, StorageArea
 from clipforge.services.ai.story import NOTE_SECONDS
 from clipforge.services.edit import EditPlan, TrimRules, Word, plan_trim
+from clipforge.services.edit.effects import (
+    Peak,
+    PunchRules,
+    plan_punch_ins,
+    zoompan_filter,
+)
+from clipforge.services.quality import ClipFacts, QualityReport, inspect_clip
 from clipforge.services.subtitles import (
     HookStyle,
     Overlay,
@@ -89,12 +96,18 @@ class RenderSetup:
     #: saber dónde hay silencio sin volver a analizar el audio: Whisper ya
     #: los midió y hasta ahora no los usaba nadie.
     words: list[Word]
+    #: Picos de volumen del vídeo, medidos en la fase 7. Son los que
+    #: colocan los acercamientos: un pico es un golpe, una risa o un grito.
+    peaks: list[Peak]
     encoder: EncoderProfile
     #: Región con imagen real del original, ya sin letterbox.
     content: CropWindow
     #: Dimensiones del original, para traducir coordenadas del análisis.
     source_width: int
     source_height: int
+    #: Fotogramas por segundo del original. Los necesita el acercamiento:
+    #: `zoompan` razona en fotogramas, no en segundos.
+    fps: float
     burn_subtitles: bool
     #: Si en este perfil de contenido tiene sentido quitar los silencios.
     trim_silences: bool = True
@@ -116,6 +129,9 @@ class RenderedClip:
     has_hook: bool
     crop_x: int
     crop_width: int
+    #: Qué le pasa al fichero ya escrito. Nada de lo anterior lo mira: las
+    #: demás capas comprueban intenciones, esta comprueba el MP4.
+    quality: QualityReport
 
 
 def build_setup(
@@ -127,6 +143,7 @@ def build_setup(
     sample_at: float = 0.0,
     words: list[Word] | None = None,
     trim_silences: bool = True,
+    peaks: list[Peak] | None = None,
 ) -> RenderSetup:
     """Prepara encoder y encuadre para todos los clips de un proyecto.
 
@@ -154,10 +171,12 @@ def build_setup(
         storage=ProjectStorage(project_id),
         segments=segments,
         words=words or [],
+        peaks=peaks or [],
         encoder=encoder,
         content=content,
         source_width=probed.width,
         source_height=probed.height,
+        fps=probed.fps,
         burn_subtitles=burn_subtitles,
         trim_silences=trim_silences,
     )
@@ -305,6 +324,37 @@ def _hook_text(plan: ClipRenderPlan) -> str | None:
     return plan.hook.strip() if plan.hook else None
 
 
+def plan_zoom(edit: EditPlan, setup: RenderSetup) -> str | None:
+    """El filtro de acercamiento del clip, o None si no toca acercar.
+
+    Los acercamientos se colocan sobre los picos de volumen medidos, no
+    sobre lo que diga un modelo: un pico ES el golpe. Ver
+    `services/edit/effects.py`.
+    """
+    if not settings.dynamic_zoom or not setup.peaks:
+        return None
+
+    punches = plan_punch_ins(
+        edit,
+        setup.peaks,
+        rules=PunchRules(
+            min_prominence=settings.zoom_min_prominence,
+            max_punches=settings.zoom_max_punches,
+            min_spacing=settings.zoom_min_spacing_seconds,
+            zoom=settings.zoom_amount,
+        ),
+    )
+    if not punches:
+        return None
+
+    return zoompan_filter(
+        punches,
+        width=settings.output_width,
+        height=settings.output_height,
+        fps=setup.fps,
+    )
+
+
 def build_plan_cues(edit: EditPlan, setup: RenderSetup) -> list[SubtitleCue]:
     """Subtítulos del clip, ya en tiempos del MONTAJE y no del original.
 
@@ -374,6 +424,7 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         start=edit.source_start,
         end=edit.source_end,
         beats=[(beat.start, beat.end) for beat in edit.beats],
+        zoom=plan_zoom(edit, setup),
         # Sin subtítulos quemados el .srt sigue quedando en disco, para poder
         # publicar el clip limpio y subirlos aparte.
         subtitles=burn_path,
@@ -397,4 +448,16 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         has_hook=any(overlay.kind == "hook" for overlay in overlays),
         crop_x=framing.window.x,
         crop_width=framing.window.width,
+        quality=inspect_clip(
+            ClipFacts(
+                duration=result.duration,
+                width=result.width,
+                height=result.height,
+                filesize_bytes=result.filesize_bytes,
+                cues=len(burned_cues),
+                has_hook=any(overlay.kind == "hook" for overlay in overlays),
+                trimmed=round(edit.removed, 2),
+                expects_speech=setup.burn_subtitles,
+            )
+        ),
     )

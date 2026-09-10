@@ -185,6 +185,16 @@ class Settings(BaseSettings):
     ai_judge_provider: AIProvider | None = None
     ai_judge_model: str | None = None
 
+    # ------------------------------------------------------------ etiquetado
+    #: Poner nicho, personaje, tema y clase de momento a cada clip, para
+    #: poder repartirlos entre varios canales sin abrirlos uno a uno. Es UNA
+    #: llamada por proyecto, y es la unica de las cuatro donde un modelo
+    #: pequeno se defiende bien: reconocer que sale Kai Cenat es lectura, no
+    #: criterio.
+    tagging_enabled: bool = True
+    ai_tagging_provider: AIProvider | None = None
+    ai_tagging_model: str | None = None
+
     # -------------------------------------------------------------- narrativa
     #: El montador: decide por donde empieza de verdad el clip, que contexto
     #: falta y donde cae el remate. Es lo que separa un recorte de una pieza
@@ -214,6 +224,23 @@ class Settings(BaseSettings):
     #: Vacios = los generales.
     ai_story_provider: AIProvider | None = None
     ai_story_model: str | None = None
+
+    # ---------------------------------------------------------------- efectos
+    #: Acercamiento momentaneo sobre los picos de volumen MEDIDOS. No lo
+    #: decide ningun modelo: un pico es un golpe, una risa o un grito, y un
+    #: zoom que cae ahi esta motivado por el contenido. Uno que cae donde lo
+    #: dijo un modelo es decoracion, y decoracion es lo que YouTube llama
+    #: contenido reutilizado.
+    dynamic_zoom: bool = True
+    #: Tope por clip. Si todo se subraya, no se subraya nada.
+    zoom_max_punches: int = 3
+    #: Cuanto se acerca. 1.12 se nota sin marear; por encima de 1.2 el clip
+    #: parece grabado con la camara en la mano.
+    zoom_amount: float = 1.12
+    #: Prominencia minima del pico, 0..1. Por debajo es conversacion normal.
+    zoom_min_prominence: float = 0.45
+    #: Separacion minima entre dos acercamientos. Seguidos son un temblor.
+    zoom_min_spacing_seconds: float = 5.0
 
     # ---------------------------------------------------------------- montaje
     #: Quitar del clip el tiempo muerto: los huecos entre palabras que Whisper
