@@ -317,7 +317,7 @@ class Settings(BaseSettings):
     min_usable_speech_ratio: float = 0.02
 
     # ---------------------------------------------------------------- clips
-    max_clips_per_project: int = 5
+    max_clips_per_project: int = 15
     #: Por debajo de 30 s no da tiempo a contar nada con remate, asi que ese
     #: es el suelo. El techo de 2 minutos deja sitio a un momento que de
     #: verdad lo necesite, pero el OPTIMO sigue bajo a proposito: un clip

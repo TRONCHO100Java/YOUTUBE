@@ -12,7 +12,12 @@
 [CmdletBinding()]
 param(
     # No abrir el frontend (util si solo trabajas en el backend).
-    [switch]$NoWeb
+    [switch]$NoWeb,
+
+    # Cuantos workers para las tareas cortas (buscar canales, retitular,
+    # reetiquetar, publicar). El del pipeline es SIEMPRE uno: ver abajo.
+    [ValidateRange(1, 8)]
+    [int]$CpuWorkers = 2
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,12 +95,28 @@ Start-Process powershell -ArgumentList @(
     "Set-Location '$backend'; .\.venv\Scripts\uvicorn.exe clipforge.api.main:app --reload --port 8000"
 )
 
-Write-Host '==> Abriendo worker Celery...' -ForegroundColor Cyan
+# El trabajo se reparte en dos colas y no en un worker que las atienda las
+# dos, que es lo que habia antes: con una sola cola, revisar un canal o
+# retitular se quedaba esperando veinte minutos detras de un pipeline.
+#
+# La cola 'gpu' lleva UN worker y no es negociable. El pipeline carga
+# Whisper large-v3 (~3 GB) y qwen2.5:14b (~9 GB) en la misma tarjeta; con
+# 16 GB, dos pipelines a la vez son 24 GB y se queda sin memoria. Mas
+# paralelismo aqui no va mas rapido: va a fallar.
+Write-Host '==> Abriendo worker del pipeline (cola gpu, uno solo)...' -ForegroundColor Cyan
 # --pool=solo es obligatorio en Windows: el pool prefork de Celery no funciona.
 Start-Process powershell -ArgumentList @(
     '-NoExit', '-Command',
-    "Set-Location '$backend'; .\.venv\Scripts\celery.exe -A clipforge.worker.celery_app worker --loglevel=info --pool=solo -Q cpu,gpu"
+    "Set-Location '$backend'; .\.venv\Scripts\celery.exe -A clipforge.worker.celery_app worker --loglevel=info --pool=solo -Q gpu -n pipeline@%h"
 )
+
+Write-Host "==> Abriendo $CpuWorkers worker(s) de tareas cortas (cola cpu)..." -ForegroundColor Cyan
+foreach ($index in 1..$CpuWorkers) {
+    Start-Process powershell -ArgumentList @(
+        '-NoExit', '-Command',
+        "Set-Location '$backend'; .\.venv\Scripts\celery.exe -A clipforge.worker.celery_app worker --loglevel=info --pool=solo -Q cpu -n cpu$index@%h"
+    )
+}
 
 Write-Host '==> Abriendo temporizador (Celery beat)...' -ForegroundColor Cyan
 # Proceso aparte y no '-B' dentro del worker: el beat embebido no funciona
@@ -130,4 +151,4 @@ Write-Host '  Frontend  http://localhost:3000'
 Write-Host '  API       http://localhost:8000'
 Write-Host '  OpenAPI   http://localhost:8000/docs'
 Write-Host ''
-Write-Host 'Cierra las cuatro ventanas de PowerShell para parar la aplicacion.'
+Write-Host 'Cierra las ventanas de PowerShell para parar la aplicacion.'

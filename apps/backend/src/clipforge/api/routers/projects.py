@@ -35,6 +35,7 @@ from clipforge.db.models import (
 )
 from clipforge.services.source.urls import validate_source_url
 from clipforge.worker.tasks.pipeline import process_project
+from clipforge.worker.tasks.retag import retag_project
 from clipforge.worker.tasks.retitle import retitle_project
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -252,6 +253,34 @@ async def retitle(project_id: uuid.UUID, repo: ProjectRepo) -> TaskRef:
     # idéntico a lo que el cliente ya tenía. Con el id puede esperar.
     task = retitle_project.delay(str(project.id))
     logger.info("project.retitle_requested", project_id=str(project.id), task_id=task.id)
+    return TaskRef(task_id=str(task.id), state=str(task.state))
+
+
+@router.post(
+    "/{project_id}/retag",
+    response_model=TaskRef,
+    summary="Volver a etiquetar los clips para poder repartirlos",
+)
+async def retag(project_id: uuid.UUID, repo: ProjectRepo) -> TaskRef:
+    """Pone etiquetas a los clips sin volver a renderizar.
+
+    Las etiquetas —quién sale, de qué va, qué clase de momento es— son lo
+    único que permite repartir un clip entre varios canales. Los proyectos
+    anteriores al etiquetador no las tienen, y sus clips no encajan en
+    ningún canal por bien puestos que estén los filtros.
+
+    Rehacer el proyecto entero para conseguirlas costaría descarga, Whisper
+    y ffmpeg por un dato que sale de leer el título y la transcripción.
+    """
+    project = await _require(project_id, repo)
+
+    if ProjectStatus(project.status).is_running:
+        raise ConflictError(
+            f"El proyecto está en curso ({project.status}); espera a que termine"
+        )
+
+    task = retag_project.delay(str(project.id))
+    logger.info("project.retag_requested", project_id=str(project.id), task_id=task.id)
     return TaskRef(task_id=str(task.id), state=str(task.state))
 
 

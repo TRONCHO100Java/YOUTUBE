@@ -27,6 +27,7 @@ celery_app = Celery(
         "clipforge.worker.tasks.pipeline",
         "clipforge.worker.tasks.render",
         "clipforge.worker.tasks.retitle",
+        "clipforge.worker.tasks.retag",
         "clipforge.worker.tasks.ingest",
         "clipforge.worker.tasks.publish",
     ],
