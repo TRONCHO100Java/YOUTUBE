@@ -8,6 +8,7 @@ se publica.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -382,3 +383,67 @@ def test_the_variants_that_come_back_fit_and_are_ordered_by_preference() -> None
 
     assert variants[0] == "Short one"
     assert all(len(variant) <= 30 for variant in variants)
+
+
+# ----------------------------------------------------- lo que ya estaba puesto
+def test_a_clip_the_model_skips_keeps_the_metadata_it_already_had() -> None:
+    """Retitular no puede borrar la descripción de un clip que no se retitula.
+
+    Es el fallo que se coló: el clip llegaba sin sus metadatos, el redactor no
+    lo mencionaba, y al guardarlo se escribía None encima de lo que había.
+    """
+    already = replace(
+        suggestion("Dos"),
+        description="Ya tenía descripción.",
+        hashtags=("shorts", "farmfails"),
+        title_variants=("Otro título",),
+    )
+
+    clips = write_titles(
+        [suggestion("Uno"), already],
+        CONTEXT,
+        # El modelo solo devuelve el primero.
+        ask=lambda system, user: answer(["He lands on the roof"]),
+    )
+
+    assert clips[1].description == "Ya tenía descripción."
+    assert clips[1].hashtags == ("shorts", "farmfails")
+    assert clips[1].title_variants == ("Otro título",)
+
+
+def test_a_failed_call_leaves_every_clip_exactly_as_it_was() -> None:
+    already = replace(suggestion(), description="Ya tenía descripción.", hashtags=("shorts",))
+
+    def broken(system: str, user: str) -> str:
+        raise ExternalToolError("Ollama no responde")
+
+    (clip,) = write_titles([already], CONTEXT, ask=broken)
+
+    assert clip.description == "Ya tenía descripción."
+    assert clip.hashtags == ("shorts",)
+
+
+# ------------------------------------------------------- respuestas vacias
+def test_an_empty_answer_is_asked_again() -> None:
+    """`{"clips": []}` cumple el esquema y no titula nada: hay que insistir."""
+    calls: list[int] = []
+
+    def flaky(system: str, user: str) -> str:
+        calls.append(1)
+        if len(calls) == 1:
+            return json.dumps({"clips": []})
+        return answer(["He lands on the roof"])
+
+    (clip,) = write_titles([suggestion()], CONTEXT, ask=flaky)
+
+    assert len(calls) == 2
+    assert clip.title == "He lands on the roof"
+
+
+def test_an_always_empty_answer_leaves_the_clips_untouched() -> None:
+    already = replace(suggestion(), description="Ya tenía descripción.")
+
+    (clip,) = write_titles([already], CONTEXT, ask=lambda system, user: json.dumps({"clips": []}))
+
+    assert clip.title == "El salto del niño"
+    assert clip.description == "Ya tenía descripción."

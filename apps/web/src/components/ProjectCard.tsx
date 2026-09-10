@@ -90,7 +90,10 @@ export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
         setRetitled(
           count > 0
             ? `${count} ${count === 1 ? "título reescrito" : "títulos reescritos"}`
-            : "Sin cambios: los títulos que había siguen siendo los mejores",
+            // Sin afirmar por qué: "seguían siendo los mejores" sería una
+            // certeza que aquí no se tiene. Puede que el modelo no haya
+            // propuesto nada distinto, o nada en absoluto.
+            : "Sin cambios en los títulos",
         );
         // Los clips que hay pintados llevan el título viejo.
         setClipsKey((value) => value + 1);

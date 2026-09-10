@@ -106,6 +106,15 @@ def _load(
                 reason=row.reason,
                 scores=None,
                 transcript_excerpt=row.transcript_excerpt,
+                # Los metadatos que YA tiene viajan con el clip. Sin esto,
+                # un clip que el redactor no devuelva —porque la llamada
+                # falló o porque se saltó una entrada— vuelve con los
+                # campos vacíos, y al guardarlo BORRA la descripción y las
+                # etiquetas que había. "Sin cambios" tiene que significar
+                # exactamente eso.
+                title_variants=tuple(row.title_variants or ()),
+                description=row.description,
+                hashtags=tuple(row.hashtags or ()),
                 source=row.source,
                 signal_score=row.score,
             )
@@ -115,7 +124,12 @@ def _load(
 
 
 def _save(ids: list[uuid.UUID], before: list[ClipSuggestion], after: list[ClipSuggestion]) -> int:
-    """Guarda los títulos nuevos y devuelve cuántos han cambiado de verdad."""
+    """Guarda lo que traiga cada clip y devuelve cuántos títulos han cambiado.
+
+    Lo que se guarda sale del clip, que llegó aquí con sus metadatos puestos
+    y solo los ha cambiado quien tenía algo mejor que decir. Escribir sin
+    más lo que traiga es seguro justamente por eso.
+    """
     changed = 0
 
     with sync_session_scope() as session:

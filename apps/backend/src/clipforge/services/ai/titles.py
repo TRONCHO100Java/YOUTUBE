@@ -157,32 +157,60 @@ def write_titles(
 
     started = time.perf_counter()
     briefs = [_brief(number, clip) for number, clip in enumerate(clips, start=1)]
+    system = build_titles_system_prompt(
+        max_chars=settings.title_max_chars,
+        variants=settings.title_variants,
+        # Una la pone el sistema, así que al modelo se le piden el resto.
+        hashtags=MAX_HASHTAGS - 1,
+        keywords=bool(context.keywords),
+    )
+    user = build_titles_user_prompt(briefs, context)
+    request = ask or _ask_provider
 
-    try:
-        content = (ask or _ask_provider)(
-            build_titles_system_prompt(
-                max_chars=settings.title_max_chars,
-                variants=settings.title_variants,
-                # Una la pone el sistema, así que al modelo se le piden el resto.
-                hashtags=MAX_HASHTAGS - 1,
-                keywords=bool(context.keywords),
-            ),
-            build_titles_user_prompt(briefs, context),
-        )
-        proposals = parse_titles(content)
-    except ExternalToolError as exc:
-        # El titulado es una mejora, no un requisito: los clips ya están.
-        logger.warning("ai.titles_failed", error=exc.message)
+    proposals = _ask_until_answered(request, system, user)
+    if not proposals:
+        # Una lista vacía cumple el esquema, así que no es un error del que
+        # avise nadie. Pero tratarla como éxito haría que la interfaz dijese
+        # "sin cambios, los títulos que había siguen siendo los mejores"
+        # cuando en realidad el modelo no ha dicho ni una palabra.
+        logger.warning("ai.titles_empty", clips=len(clips))
         return clips
 
     titled = _apply(clips, proposals)
     logger.info(
         "ai.titles_written",
         clips=len(clips),
+        answered=len(proposals),
         rewritten=sum(1 for a, b in zip(clips, titled, strict=True) if a.title != b.title),
         seconds=round(time.perf_counter() - started, 1),
     )
     return titled
+
+
+def _ask_until_answered(ask: Ask, system: str, user: str) -> dict[int, RawTitle]:
+    """Pide títulos, reintentando mientras la respuesta venga vacía.
+
+    Un modelo local devuelve de vez en cuando `{"clips": []}`: cumple el
+    esquema, así que no salta ningún error, y sin embargo no ha titulado
+    nada. Es el mismo reintento que ya hace el análisis con Ollama, y por la
+    misma razón: perder la pasada entera por un mal rato del modelo cuesta
+    mucho más que volver a preguntar.
+    """
+    attempts = max(1, settings.ai_max_retries)
+
+    for attempt in range(1, attempts + 1):
+        try:
+            proposals = parse_titles(ask(system, user))
+        except ExternalToolError as exc:
+            # El titulado es una mejora, no un requisito: los clips ya están.
+            logger.warning("ai.titles_failed", attempt=attempt, error=exc.message)
+            return {}
+
+        if proposals:
+            return proposals
+        logger.info("ai.titles_retry", attempt=attempt)
+
+    return {}
 
 
 # ----------------------------------------------------------------- validación
