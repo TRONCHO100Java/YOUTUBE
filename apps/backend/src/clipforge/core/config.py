@@ -185,6 +185,36 @@ class Settings(BaseSettings):
     ai_judge_provider: AIProvider | None = None
     ai_judge_model: str | None = None
 
+    # -------------------------------------------------------------- narrativa
+    #: El montador: decide por donde empieza de verdad el clip, que contexto
+    #: falta y donde cae el remate. Es lo que separa un recorte de una pieza
+    #: editada, y una llamada por clip publicado.
+    story_editor_enabled: bool = True
+    #: Rotulos de contexto en pantalla. Son comentario PROPIO —no metraje
+    #: ajeno— y la unica forma de explicar quien es quien sin narracion, sin
+    #: voz y sin salir en camara. Es la funcion mas valiosa del montador.
+    #:
+    #: APAGADOS DE FABRICA, y no por precaucion generica: medido sobre clips
+    #: reales, qwen2.5:14b escribe notas como "Motivational quote" o "Role
+    #: model message". Eso en pantalla es ruido que tapa el video y no
+    #: explica nada. Enciendelos cuando AI_STORY_PROVIDER apunte a un modelo
+    #: capaz de decir QUE acaba de pasar.
+    contextual_overlays: bool = False
+    #: Dejar que el montador reescriba el gancho.
+    #:
+    #: Tambien apagado, y por lo mismo. El gancho del analisis en un clip
+    #: hablado es una CITA TEXTUAL —"There's kids watching you, gang."— y un
+    #: modelo pequeno la sustituye por una descripcion —"Kai Cenat Speaks
+    #: Truth to the Youth"— que es medible peor: describe en vez de
+    #: provocar. Ante la duda, lo que ya habia.
+    story_rewrites_hook: bool = False
+    #: Cuantas notas como mucho. Mas de dos y el clip pasa a leerse en vez de
+    #: verse, que es lo contrario de lo que se busca.
+    max_context_notes: int = 2
+    #: Vacios = los generales.
+    ai_story_provider: AIProvider | None = None
+    ai_story_model: str | None = None
+
     # ---------------------------------------------------------------- montaje
     #: Quitar del clip el tiempo muerto: los huecos entre palabras que Whisper
     #: ya tiene medidos. Es la transformacion con mejor relacion

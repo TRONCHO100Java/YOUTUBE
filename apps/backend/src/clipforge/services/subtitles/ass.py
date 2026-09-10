@@ -12,9 +12,15 @@ margen algo grande manda el texto fuera de pantalla. Un `.ass` declara su propia
 El fichero lleva dos capas con propósitos distintos:
 
 - **Subtítulos**, abajo, durante todo el clip. Transcriben lo que se dice.
-- **Gancho**, arriba, solo los primeros segundos. Es la frase que decide si
-  alguien sigue mirando, y en un clip sin diálogo es lo único escrito que hay:
-  sin ella se publica un vídeo mudo y sin contexto.
+- **Rótulos**, arriba, cada uno en su momento. Hay de dos clases:
+
+  - El **gancho** ocupa los primeros segundos. Es la frase que decide si
+    alguien sigue mirando, y en un clip sin diálogo es lo único escrito que
+    hay: sin ella se publica un vídeo mudo y sin contexto.
+  - Las **notas** aparecen a mitad de clip y dicen lo que el vídeo no dice:
+    quién es alguien, qué acaba de pasar, por qué importa. Son el comentario
+    editorial propio, y por eso van más pequeñas que el gancho: acompañan,
+    no gritan.
 """
 
 from __future__ import annotations
@@ -68,6 +74,51 @@ class HookStyle:
     max_lines: int = 3
 
 
+@dataclass(frozen=True, slots=True)
+class NoteStyle:
+    """Estilo de una nota contextual.
+
+    Más pequeña que el gancho y algo más abajo: el gancho compite por la
+    atención en el primer segundo, la nota acompaña a lo que se está viendo.
+    Con el mismo tamaño las dos gritan y no se lee ninguna.
+    """
+
+    font: str = "Arial"
+    size: int = 66
+    bold: bool = True
+    outline: int = 5
+    shadow: int = 2
+    margin_vertical: int = 420
+    margin_horizontal: int = 90
+    line_length: int = 26
+    max_lines: int = 2
+
+
+@dataclass(frozen=True, slots=True)
+class Overlay:
+    """Un texto en pantalla, con su momento y su duración.
+
+    Los tiempos son del CLIP ya montado, no del original: quien lo compone ya
+    ha traducido el instante a través del `EditPlan`, porque un rótulo puesto
+    en tiempos del original aparecería desplazado en cuanto se quite un
+    silencio.
+    """
+
+    text: str
+    start: float
+    end: float
+    #: "hook" arriba del todo y grande; "note" más abajo y más pequeña.
+    kind: str = "note"
+
+    @property
+    def duration(self) -> float:
+        return max(0.0, self.end - self.start)
+
+    @property
+    def style_name(self) -> str:
+        return "Hook" if self.kind == "hook" else "Note"
+
+
 def wrap_hook(text: str, *, line_length: int, max_lines: int) -> str:
     """Parte el gancho en líneas legibles, recortando lo que sobre.
 
@@ -94,13 +145,14 @@ def render_ass(
     height: int,
     style: SubtitleStyle | None = None,
     *,
-    hook: str | None = None,
-    hook_seconds: float = 3.0,
+    overlays: Sequence[Overlay] = (),
     hook_style: HookStyle | None = None,
+    note_style: NoteStyle | None = None,
 ) -> str:
-    """Serializa subtítulos y gancho como un fichero ASS completo."""
+    """Serializa subtítulos y rótulos como un fichero ASS completo."""
     conf = style or SubtitleStyle()
     hook_conf = hook_style or HookStyle()
+    note_conf = note_style or NoteStyle()
 
     header = "\n".join(
         [
@@ -135,6 +187,14 @@ def render_ass(
             # Alignment 8 = arriba y centrado.
             f"8,{hook_conf.margin_horizontal},{hook_conf.margin_horizontal},"
             f"{hook_conf.margin_vertical},1",
+            "Style: Note,"
+            f"{note_conf.font},{note_conf.size},"
+            "&H00FFFFFF,&H000000FF,&H00000000,&H00000000,"
+            f"{-1 if note_conf.bold else 0},0,0,0,"
+            "100,100,0,0,"
+            f"1,{note_conf.outline},{note_conf.shadow},"
+            f"8,{note_conf.margin_horizontal},{note_conf.margin_horizontal},"
+            f"{note_conf.margin_vertical},1",
             "",
             "[Events]",
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -142,15 +202,20 @@ def render_ass(
     )
 
     events = []
-    if hook and hook_seconds > 0:
-        wrapped = wrap_hook(hook, line_length=hook_conf.line_length, max_lines=hook_conf.max_lines)
-        if wrapped:
-            # Capa 1: por encima de los subtítulos si alguna vez coincidieran.
-            events.append(
-                f"Dialogue: 1,{_timestamp(0)},{_timestamp(hook_seconds)},Hook,,0,0,0,,"
-                f"{_escape(wrapped)}"
-            )
-
+    for overlay in overlays:
+        if overlay.duration <= 0:
+            continue
+        conf_for = hook_conf if overlay.kind == "hook" else note_conf
+        wrapped = wrap_hook(
+            overlay.text, line_length=conf_for.line_length, max_lines=conf_for.max_lines
+        )
+        if not wrapped:
+            continue
+        # Capa 1: por encima de los subtítulos si alguna vez coincidieran.
+        events.append(
+            f"Dialogue: 1,{_timestamp(overlay.start)},{_timestamp(overlay.end)},"
+            f"{overlay.style_name},,0,0,0,,{_escape(wrapped)}"
+        )
     events += [
         f"Dialogue: 0,{_timestamp(cue.start)},{_timestamp(cue.end)},Default,,0,0,0,,"
         f"{_escape(cue.text)}"
@@ -167,9 +232,9 @@ def write_ass(
     height: int,
     style: SubtitleStyle | None = None,
     *,
-    hook: str | None = None,
-    hook_seconds: float = 3.0,
+    overlays: Sequence[Overlay] = (),
     hook_style: HookStyle | None = None,
+    note_style: NoteStyle | None = None,
 ) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(
@@ -178,9 +243,9 @@ def write_ass(
             width,
             height,
             style,
-            hook=hook,
-            hook_seconds=hook_seconds,
+            overlays=overlays,
             hook_style=hook_style,
+            note_style=note_style,
         ),
         encoding="utf-8",
     )

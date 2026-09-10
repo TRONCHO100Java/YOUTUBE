@@ -70,6 +70,10 @@ class ClipCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: catorce dimensiones y va a cambiar: es la parte del sistema que mas se
     #: va a iterar, y una migracion por peso ajustado no tiene sentido.
     judge_scores: Mapped[dict[str, int] | None] = mapped_column(JSONB, nullable=True)
+    #: Como se cuenta el clip: por donde empieza de verdad, que notas de
+    #: contexto lleva y donde cae el remate. Se guarda para poder repetir un
+    #: render identico sin volver a llamar al montador.
+    story: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
     # Desglose de viralidad (total = 100).
     score: Mapped[float] = mapped_column(Float, nullable=False, default=0)

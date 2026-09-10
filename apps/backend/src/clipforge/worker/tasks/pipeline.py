@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import tempfile
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,7 @@ from clipforge.services.ai import (
     select_clips,
     select_clips_from_blocks,
     suggestions_from_signals,
+    write_story,
     write_titles,
 )
 from clipforge.services.ai.chunking import to_analysis_segments
@@ -459,6 +461,9 @@ def _analyze_stage(project_id: uuid.UUID, log: Any) -> bool:
         # que han sobrevivido al ranking, que son los que se van a publicar.
         # Y va antes de guardar para que el título bueno sea el primero que
         # ve el usuario, sin un parpadeo con el título viejo por medio.
+        # El montador va antes del titulado: puede reescribir el gancho, y
+        # el titulado necesita saber cuál es para no repetirlo en el título.
+        suggestions = [_with_story(clip, context) for clip in suggestions]
         suggestions = write_titles(suggestions, context)
         _save_candidates(project_id, suggestions, status=CandidateStatus.SELECTED)
         log.info(
@@ -486,6 +491,28 @@ def _analyze_stage(project_id: uuid.UUID, log: Any) -> bool:
         ),
     )
     return False
+
+
+def _with_story(clip: ClipSuggestion, context: AnalysisContext) -> ClipSuggestion:
+    """Decide cómo se cuenta el clip y se lo pega encima.
+
+    El gancho del montador NO manda sobre el del análisis salvo que se
+    encienda `STORY_REWRITES_HOOK`. Suena al revés, y hay una medida
+    detrás: en un clip hablado el gancho del análisis es una cita textual
+    de lo que se dice, y un modelo pequeño la sustituye por una
+    descripción. Lo que el montador sí aporta siempre es apretar la
+    entrada y marcar el remate.
+    """
+    story = write_story(clip, context)
+    if story is None:
+        return clip
+
+    rewritten = story.hook if settings.story_rewrites_hook else None
+    return replace(
+        clip,
+        story=story.as_dict(),
+        hook=rewritten or clip.hook,
+    )
 
 
 def _run_analysis(
@@ -579,6 +606,7 @@ def _save_candidates(
                     description=item.description,
                     hashtags=list(item.hashtags) or None,
                     judge_scores=item.judge_scores,
+                    story=item.story,
                     score=item.score,
                     hook_score=item.scores.hook if item.scores else None,
                     curiosity_score=item.scores.curiosity if item.scores else None,
@@ -621,6 +649,7 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
                 end=candidate.end_time,
                 hook=candidate.hook,
                 crop_x=candidate.crop_x,
+                story=candidate.story,
             )
             for position, candidate in enumerate(candidates, start=1)
         ]

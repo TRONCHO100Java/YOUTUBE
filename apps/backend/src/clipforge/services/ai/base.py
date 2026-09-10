@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from clipforge.db.models.enums import CandidateSource, ContentProfile
 
@@ -127,6 +127,9 @@ class ClipSuggestion:
     #: columnas porque su rúbrica tiene catorce dimensiones y cambiará: es
     #: justo la parte del sistema que más se va a iterar.
     judge_scores: dict[str, int] | None = None
+    #: Cómo se cuenta el clip: por dónde empieza de verdad, qué notas de
+    #: contexto lleva y dónde cae el remate. Lo decide el montador.
+    story: dict[str, Any] | None = None
     source: CandidateSource = CandidateSource.AI
     #: Puntuación directa, para los candidatos que no tienen desglose.
     signal_score: float | None = None

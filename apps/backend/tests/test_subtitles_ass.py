@@ -16,13 +16,18 @@ from clipforge.services.subtitles import (
     wrap_hook,
     write_ass,
 )
-from clipforge.services.subtitles.ass import SubtitleStyle, _escape, _timestamp
+from clipforge.services.subtitles.ass import Overlay, SubtitleStyle, _escape, _timestamp
 from clipforge.services.subtitles.srt import SubtitleCue
 
 CUES = [
     SubtitleCue(start=0.0, end=2.5, text="Primera línea"),
     SubtitleCue(start=2.5, end=5.0, text="Dos\nlíneas"),
 ]
+
+
+def hook(text: str, seconds: float = 3.0) -> Overlay:
+    """El gancho como lo que ahora es: un rótulo más, el de arriba."""
+    return Overlay(text=text, start=0.0, end=seconds, kind="hook")
 
 
 def test_declares_the_output_resolution() -> None:
@@ -104,7 +109,7 @@ def test_empty_cue_list_still_produces_a_valid_file() -> None:
 # ------------------------------------------------------------------- gancho
 def test_the_hook_is_written_on_its_own_layer() -> None:
     """Va en capa 1 para quedar por encima del subtítulo si coincidieran."""
-    rendered = render_ass([], 1080, 1920, hook="Mira lo que pasa")
+    rendered = render_ass([], 1080, 1920, overlays=[hook("Mira lo que pasa")])
 
     assert "Style: Hook," in rendered
     assert "Dialogue: 1," in rendered
@@ -113,14 +118,14 @@ def test_the_hook_is_written_on_its_own_layer() -> None:
 
 def test_the_hook_sits_at_the_top() -> None:
     """Alignment 8. La mitad de abajo la tapan los botones de la app."""
-    rendered = render_ass([], 1080, 1920, hook="Arriba")
+    rendered = render_ass([], 1080, 1920, overlays=[hook("Arriba")])
 
     hook_style = next(line for line in rendered.splitlines() if line.startswith("Style: Hook,"))
     assert hook_style.split(",")[18] == "8"
 
 
 def test_the_hook_only_covers_the_first_seconds() -> None:
-    rendered = render_ass([], 1080, 1920, hook="Corto", hook_seconds=2.5)
+    rendered = render_ass([], 1080, 1920, overlays=[hook("Corto", 2.5)])
 
     event = next(line for line in rendered.splitlines() if line.startswith("Dialogue: 1,"))
     assert "0:00:00.00" in event
@@ -130,7 +135,7 @@ def test_the_hook_only_covers_the_first_seconds() -> None:
 def test_a_clip_without_subtitles_still_gets_its_hook() -> None:
     """El caso que motivó todo: un clip visual no lleva subtítulos y es el que
     más necesita una frase escrita."""
-    rendered = render_ass([], 1080, 1920, hook="Sin diálogo")
+    rendered = render_ass([], 1080, 1920, overlays=[hook("Sin diálogo")])
 
     assert "Dialogue: 1," in rendered
     assert "Dialogue: 0," not in rendered
@@ -138,12 +143,12 @@ def test_a_clip_without_subtitles_still_gets_its_hook() -> None:
 
 def test_no_hook_means_no_hook_event() -> None:
     assert "Dialogue: 1," not in render_ass([], 1080, 1920)
-    assert "Dialogue: 1," not in render_ass([], 1080, 1920, hook="   ")
-    assert "Dialogue: 1," not in render_ass([], 1080, 1920, hook="Algo", hook_seconds=0)
+    assert "Dialogue: 1," not in render_ass([], 1080, 1920, overlays=[hook("   ")])
+    assert "Dialogue: 1," not in render_ass([], 1080, 1920, overlays=[hook("Algo", 0)])
 
 
 def test_the_hook_is_escaped_like_any_other_text() -> None:
-    rendered = render_ass([], 1080, 1920, hook=r"Llaves {raras} y barra \ suelta")
+    rendered = render_ass([], 1080, 1920, overlays=[hook(r"Llaves {raras} y barra \ suelta")])
 
     assert "{raras}" not in rendered
     assert "(raras)" in rendered
@@ -178,7 +183,9 @@ def test_an_empty_hook_wraps_to_nothing() -> None:
 
 
 def test_the_hook_reaches_the_ass_as_a_line_break() -> None:
-    rendered = render_ass([], 1080, 1920, hook="Una frase larga que no cabe de ninguna manera aqui")
+    rendered = render_ass(
+        [], 1080, 1920, overlays=[hook("Una frase larga que no cabe de ninguna manera aqui")]
+    )
 
     event = next(line for line in rendered.splitlines() if line.startswith("Dialogue: 1,"))
     assert r"\N" in event

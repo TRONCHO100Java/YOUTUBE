@@ -15,14 +15,17 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from clipforge.core.config import settings
 from clipforge.core.errors import ExternalToolError
 from clipforge.core.logging import get_logger
 from clipforge.core.storage import ProjectStorage, StorageArea
+from clipforge.services.ai.story import NOTE_SECONDS
 from clipforge.services.edit import EditPlan, TrimRules, Word, plan_trim
 from clipforge.services.subtitles import (
     HookStyle,
+    Overlay,
     SourceSegment,
     SubtitleCue,
     build_cues,
@@ -53,6 +56,9 @@ class ClipRenderPlan:
     #: Encuadre corregido a mano, en píxeles del original. Con None manda el
     #: automático.
     crop_x: int | None = None
+    #: Cómo se cuenta el clip, si el montador ha pasado por él: por dónde
+    #: empieza de verdad y qué notas de contexto lleva.
+    story: dict[str, Any] | None = None
 
     @property
     def stem(self) -> str:
@@ -207,13 +213,15 @@ def plan_edit(plan: ClipRenderPlan, setup: RenderSetup) -> EditPlan:
     llevaba recorriendo desde la fase 5, así que apagar el interruptor
     devuelve el comportamiento anterior exacto.
     """
+    start, end = story_bounds(plan)
+
     if not settings.smart_trimming or not setup.trim_silences or not setup.words:
-        return EditPlan.single(plan.start, plan.end)
+        return EditPlan.single(start, end)
 
     return plan_trim(
         setup.words,
-        start=plan.start,
-        end=plan.end,
+        start=start,
+        end=end,
         rules=TrimRules(
             min_gap=settings.trim_min_gap_seconds,
             padding=settings.trim_padding_seconds,
@@ -221,6 +229,80 @@ def plan_edit(plan: ClipRenderPlan, setup: RenderSetup) -> EditPlan:
             max_removed_ratio=settings.trim_max_removed_ratio,
         ),
     )
+
+
+def story_bounds(plan: ClipRenderPlan) -> tuple[float, float]:
+    """Entrada y salida del clip después de que el montador las apriete.
+
+    El detector propone rangos generosos porque razona con segmentos enteros
+    de transcripción. El montador dice en qué segundo empieza de verdad lo
+    interesante, y arrancar dos segundos antes de la frase buena es regalar
+    justo los dos que deciden si alguien se queda.
+
+    Los tiempos de la narrativa son relativos al clip; aquí se traducen a los
+    del original, que es lo que entiende el render.
+    """
+    if not plan.story:
+        return plan.start, plan.end
+
+    start = plan.start + float(plan.story.get("start_at") or 0.0)
+    end_at = plan.story.get("end_at")
+    end = plan.start + float(end_at) if end_at is not None else plan.end
+
+    # Acotado al rango del candidato: la narrativa afina por dentro, no
+    # amplía. Estirarlo por una cifra mal devuelta traería metraje que nadie
+    # ha juzgado.
+    start = max(plan.start, min(start, plan.end))
+    end = max(start, min(end, plan.end))
+    return (start, end) if end > start else (plan.start, plan.end)
+
+
+def build_overlays(plan: ClipRenderPlan, edit: EditPlan) -> list[Overlay]:
+    """Los textos en pantalla, ya en tiempos del clip montado.
+
+    Las notas se traducen a través del `EditPlan`: una nota puesta en el
+    segundo 12 del original aparecería tarde en cuanto se quiten cuatro
+    segundos de silencio antes. Y si el instante cae dentro de un trozo
+    eliminado, la nota se descarta: hablaría de algo que ya no se ve.
+    """
+    overlays: list[Overlay] = []
+
+    hook = _hook_text(plan)
+    if settings.hook_overlay and hook:
+        overlays.append(
+            Overlay(
+                text=hook,
+                start=0.0,
+                end=settings.hook_overlay_seconds,
+                kind="hook",
+            )
+        )
+
+    if not settings.contextual_overlays or not plan.story:
+        return overlays
+
+    for note in plan.story.get("notes") or []:
+        note_text = str(note.get("text") or "").strip()
+        if not note_text:
+            continue
+        at = edit.map_time(plan.start + float(note.get("at") or 0.0))
+        if at is None:
+            continue
+        end = min(at + NOTE_SECONDS, edit.duration)
+        if end > at:
+            overlays.append(Overlay(text=note_text, start=at, end=end, kind="note"))
+
+    return overlays
+
+
+def _hook_text(plan: ClipRenderPlan) -> str | None:
+    """El gancho que se escribe en pantalla.
+
+    El del candidato manda, porque para cuando llega aquí ya incorpora lo
+    que el montador tuviera que decir: el pipeline decide arriba si deja
+    que lo reescriba, y aquí solo se pinta.
+    """
+    return plan.hook.strip() if plan.hook else None
 
 
 def build_plan_cues(edit: EditPlan, setup: RenderSetup) -> list[SubtitleCue]:
@@ -270,20 +352,19 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
     # subtítulos —no hay nada que subtitular— y es justo el que más necesita
     # una frase escrita, porque si no se publica mudo y sin contexto.
     burned_cues = cues if setup.burn_subtitles else []
-    hook = plan.hook.strip() if settings.hook_overlay and plan.hook else None
+    overlays = build_overlays(plan, edit)
     burn_path = (
         write_ass(
             burned_cues,
             setup.storage.path_for(StorageArea.TEMP, f"{plan.stem}.ass"),
             settings.output_width,
             settings.output_height,
-            hook=hook,
-            hook_seconds=settings.hook_overlay_seconds,
+            overlays=overlays,
             hook_style=HookStyle(
                 size=settings.hook_font_size, line_length=settings.hook_line_length
             ),
         )
-        if burned_cues or hook
+        if burned_cues or overlays
         else None
     )
 
@@ -313,7 +394,7 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         has_burned_subtitles=bool(burned_cues) and result.has_burned_subtitles,
         encoder=result.encoder,
         cues=len(cues),
-        has_hook=hook is not None,
+        has_hook=any(overlay.kind == "hook" for overlay in overlays),
         crop_x=framing.window.x,
         crop_width=framing.window.width,
     )

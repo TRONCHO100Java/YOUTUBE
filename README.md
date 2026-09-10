@@ -868,7 +868,58 @@ Los subtítulos se generan tramo a tramo y se desplazan. Sin eso, quitar cuatro
 segundos de silencio dejaría todo lo posterior cuatro segundos por detrás de lo que
 se oye, que es peor que no ponerlos.
 
-## 15. Vídeos que no hablan
+## 15. Narrativa: cómo se cuenta el clip
+
+Las fases anteriores deciden **qué momento** se publica. El montador decide **cómo
+se cuenta**, que es lo que separa un recorte de una pieza editada. Mira un clip
+—uno solo, no el vídeo— y hace tres cosas:
+
+- **Aprieta la entrada y la salida.** El detector propone rangos generosos porque
+  razona con segmentos enteros de transcripción. Arrancar dos segundos antes de la
+  frase buena es regalar justo los dos que deciden si alguien se queda.
+- **Escribe el contexto que falta.** Un espectador que no ha visto el original no
+  sabe quién es quién ni qué acaba de pasar. Cinco palabras en pantalla lo
+  resuelven **sin narración, sin voz y sin salir en cámara** — y son comentario
+  propio, no metraje ajeno recortado.
+- **Marca dónde cae el remate**, para que ningún efecto se lo coma.
+
+Los rótulos van en dos capas con pesos distintos: el **gancho** arriba y grande los
+primeros segundos, las **notas** más abajo y más pequeñas en su momento. Con el
+mismo tamaño las dos gritan y no se lee ninguna.
+
+Los tiempos de las notas se traducen por el `EditPlan` (§14). Una nota puesta en el
+segundo 22 del original aparecería cinco segundos tarde en cuanto se quite un
+silencio antes; y si el instante cae dentro de un trozo eliminado, la nota se
+descarta, porque hablaría de algo que ya no se ve.
+
+### Lo que está apagado de fábrica, y por qué
+
+`CONTEXTUAL_OVERLAYS` y `STORY_REWRITES_HOOK` vienen en `false`. No es precaución
+genérica: es una medida sobre clips reales con `qwen2.5:14b`.
+
+| Lo que había | Lo que devolvió el montador |
+|---|---|
+| «There's kids watching you, gang.» | «Kai Cenat Speaks Truth to the Youth» |
+| «You want to know how you pay your mother back?» | «Kai Cenat on Repaying His Mother» |
+| *(sin nota)* | «Motivational quote» |
+
+El gancho del análisis en un clip hablado es una **cita textual** de lo que se
+dice. Un modelo pequeño la sustituye por una descripción: describe en vez de
+provocar, y eso es peor de forma medible. Las notas, igual — «Motivational quote»
+encima del vídeo es ruido que tapa la imagen y no explica nada.
+
+Hay dos guardas en el código para lo peor, y se quedan aunque se enciendan los
+interruptores: un gancho más largo de lo que cabe en pantalla se **descarta** en
+vez de recortarse a medias, y una nota que solo repite el nombre del canal o una
+palabra clave se tira, porque no dice nada que el espectador no esté viendo.
+
+Ninguna de las dos guardas puede detectar un gancho corto pero vacío. Eso es
+criterio, y el criterio lo pone el modelo: `AI_STORY_PROVIDER`.
+
+Lo que el montador **sí** aporta con cualquier modelo es apretar la entrada y
+marcar el remate, porque eso son números y no juicio.
+
+## 16. Vídeos que no hablan
 
 El análisis de la sección anterior solo lee texto, y hay vídeos que no lo tienen. Sobre una
 recopilación de comedia física de 8:39, Whisper detectó "coreano" con un 47 % de confianza y
@@ -922,7 +973,7 @@ fallido. Se guardan los mejores bloques como candidatos `SIGNAL` sin puntuar, el
 pasa a `NEEDS_REVIEW` y el vídeo original se conserva pase lo que pase con
 `KEEP_SOURCE_VIDEO`. El editor manual hace el resto.
 
-## 16. Editor manual
+## 17. Editor manual
 
 `/projects/{id}` abre el vídeo original con la línea de tiempo de señales debajo, en cinco
 carriles sobre el mismo eje: volumen, movimiento, cortes, tramos propuestos y clips ya
@@ -941,7 +992,7 @@ el modelo, no una regla para la persona que está mirando el vídeo. Y un reproc
 sustituye lo que produjo la máquina (`AI` y `SIGNAL`) pero nunca borra un candidato
 `MANUAL`.
 
-## 17. Almacenamiento
+## 18. Almacenamiento
 
 ```
 storage/projects/{project_id}/
@@ -996,7 +1047,7 @@ que arrancas: uvicorn, celery, pytest y alembic se lanzan desde sitios distintos
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 
-## 18. Migraciones
+## 19. Migraciones
 
 ```powershell
 cd apps\backend
@@ -1007,7 +1058,7 @@ cd apps\backend
 
 Revisa siempre el fichero generado antes de aplicarlo.
 
-## 19. Hoja de ruta
+## 20. Hoja de ruta
 
 - [x] **FASE 1** — infraestructura, API, BD, worker, frontend
 - [x] **FASE 2** — descarga con yt-dlp y creación de proyectos
@@ -1029,3 +1080,4 @@ Revisa siempre el fichero generado antes de aplicarlo.
 - [x] **FASE 18** — publicación en YouTube y lectura de vistas reales
 - [x] **FASE 19** — EditPlan y eliminación del tiempo muerto
 - [x] **FASE 20** — detector y juez separados, con rúbrica de Shorts
+- [x] **FASE 21** — montador: entrada apretada, contexto en pantalla y remate

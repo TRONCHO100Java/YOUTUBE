@@ -7,8 +7,14 @@ toca y el clip se ve peor que sin editar.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
+import pytest
+
+from clipforge.core.config import settings
 from clipforge.services.edit import Beat, EditPlan, TrimRules, Word, plan_trim
 from clipforge.services.edit.trim import words_from_segments
+from clipforge.services.render_clip import ClipRenderPlan, build_overlays, story_bounds
 
 
 def speech(*spans: tuple[float, float]) -> list[Word]:
@@ -174,3 +180,63 @@ def test_a_word_without_times_is_skipped() -> None:
 
 def test_a_word_that_ends_before_it_starts_is_skipped() -> None:
     assert words_from_segments([{"start": 5.0, "end": 4.0, "word": "rota"}]) == []
+
+
+# ------------------------------------------------- los rotulos, tras cortar
+@pytest.fixture
+def with_notes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enciende los rótulos de contexto, que vienen apagados de fábrica."""
+    monkeypatch.setattr(settings, "contextual_overlays", True)
+
+
+def _plan(**kwargs: object) -> ClipRenderPlan:
+    return ClipRenderPlan(candidate_id=uuid4(), rank=1, start=10.0, end=30.0, **kwargs)  # type: ignore[arg-type]
+
+
+def test_a_note_lands_where_it_should_after_removing_silence(with_notes: None) -> None:
+    """Es el fallo que el EditPlan existe para evitar.
+
+    Una nota puesta en el segundo 22 del original aparecería cinco segundos
+    tarde si nadie tradujese el instante tras quitar un silencio.
+    """
+    edit = EditPlan.of([Beat(10.0, 15.0), Beat(20.0, 30.0)])
+    plan = _plan(story={"hook": "Mira esto", "notes": [{"text": "Contexto", "at": 12.0}]})
+
+    notes = [overlay for overlay in build_overlays(plan, edit) if overlay.kind == "note"]
+
+    # Segundo 22 del original: cinco segundos de corte por delante -> 7 del clip.
+    assert notes[0].start == 7.0
+
+
+def test_a_note_inside_a_cut_is_dropped(with_notes: None) -> None:
+    """Hablaría de algo que ya no se ve."""
+    edit = EditPlan.of([Beat(10.0, 15.0), Beat(20.0, 30.0)])
+    plan = _plan(story={"notes": [{"text": "Perdida", "at": 7.0}]})
+
+    assert [o for o in build_overlays(plan, edit) if o.kind == "note"] == []
+
+
+def test_the_notes_are_off_until_someone_turns_them_on() -> None:
+    """Con un modelo pequeño son ruido en pantalla; el interruptor lo dice."""
+    plan = _plan(story={"notes": [{"text": "Algo que aporta", "at": 12.0}]})
+
+    overlays = build_overlays(plan, EditPlan.single(10.0, 30.0))
+
+    assert [o for o in overlays if o.kind == "note"] == []
+
+
+def test_the_hook_that_reaches_the_screen_is_the_one_the_candidate_carries() -> None:
+    """Quién decide reescribirlo se resuelve arriba; aquí solo se pinta."""
+    plan = _plan(hook="El del candidato", story={"hook": "El del montador"})
+
+    (hook,) = [o for o in build_overlays(plan, EditPlan.single(10.0, 30.0)) if o.kind == "hook"]
+    assert hook.text == "El del candidato"
+
+
+def test_the_story_can_tighten_the_entry_but_not_stretch_it() -> None:
+    """Estirar traería metraje que nadie ha juzgado."""
+    tightened = _plan(story={"start_at": 4.0})
+    stretched = _plan(story={"start_at": -8.0})
+
+    assert story_bounds(tightened) == (14.0, 30.0)
+    assert story_bounds(stretched)[0] == 10.0

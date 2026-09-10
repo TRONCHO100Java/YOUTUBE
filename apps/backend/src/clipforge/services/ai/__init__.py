@@ -24,6 +24,7 @@ from clipforge.services.ai.selector import (
     select_clips_from_blocks,
     suggestions_from_signals,
 )
+from clipforge.services.ai.story import Story, write_story
 from clipforge.services.ai.titles import write_titles
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "ClipScores",
     "ClipSuggestion",
     "ProfileRules",
+    "Story",
     "detect_profile",
     "get_analyzer",
     "get_block_analyzer",
@@ -44,5 +46,6 @@ __all__ = [
     "select_clips",
     "select_clips_from_blocks",
     "suggestions_from_signals",
+    "write_story",
     "write_titles",
 ]

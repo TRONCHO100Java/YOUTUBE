@@ -2,6 +2,8 @@
 
 from clipforge.services.subtitles.ass import (
     HookStyle,
+    NoteStyle,
+    Overlay,
     SubtitleStyle,
     render_ass,
     wrap_hook,
@@ -17,6 +19,8 @@ from clipforge.services.subtitles.srt import (
 
 __all__ = [
     "HookStyle",
+    "NoteStyle",
+    "Overlay",
     "SourceSegment",
     "SubtitleCue",
     "SubtitleStyle",
