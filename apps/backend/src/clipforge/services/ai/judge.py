@@ -57,10 +57,14 @@ MERITS: tuple[Criterion, ...] = (
     Criterion("payoff", 15, "hay un remate de verdad, no se queda a medias"),
     Criterion("curiosity", 12, "genera necesidad de saber cómo acaba"),
     Criterion("standalone", 12, "se entiende sin haber visto el vídeo original"),
-    Criterion("humor", 10, "hace gracia de verdad"),
-    Criterion("surprise", 8, "pasa algo que no se veía venir"),
+    Criterion("humor", 12, "hace gracia de verdad"),
+    Criterion("surprise", 9, "pasa algo que no se veía venir"),
     Criterion("emotion", 8, "carga emocional: tensión, ternura, indignación"),
-    Criterion("controversy", 7, "invita a discutir o a tomar partido"),
+    # Baja de 7 a 4, no desaparece. Un momento polémico sigue valiendo —de
+    # ahí salen los clips que la gente comenta— pero con 7 puntos mandaba
+    # sobre el humor, y el mejor clip de un vídeo de risas acabó siendo una
+    # acusación. Lo que sube son las dos que sí se querían premiar.
+    Criterion("controversy", 4, "invita a discutir o a tomar partido"),
     Criterion("person", 5, "sale alguien a quien la gente busca por su nombre"),
     Criterion("shareability", 3, "ganas de mandárselo a alguien"),
     Criterion("comments", 2, "deja algo sobre lo que opinar"),

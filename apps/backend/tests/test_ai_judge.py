@@ -218,3 +218,21 @@ def test_nothing_to_judge_is_not_a_call() -> None:
         raise AssertionError("no hay nada que juzgar")
 
     assert judge_candidates([], CONTEXT, limit=5, ask=explode) == []
+
+
+# ------------------------------------------------------------- los pesos
+def test_controversy_still_counts_but_no_longer_rules() -> None:
+    """Se queda porque de ahí salen los clips que la gente comenta.
+
+    Con 7 puntos mandaba sobre el humor y el mejor clip de un vídeo de risas
+    acabó siendo una acusación. Baja, no desaparece.
+    """
+    weights = {criterion.key: criterion.maximum for criterion in MERITS}
+
+    assert weights["controversy"] > 0
+    assert weights["controversy"] < weights["humor"]
+
+
+def test_the_rubric_still_adds_up_to_a_hundred() -> None:
+    """Tocar un peso sin tocar otro descuadraría la nota en silencio."""
+    assert MAX_SCORE == 100

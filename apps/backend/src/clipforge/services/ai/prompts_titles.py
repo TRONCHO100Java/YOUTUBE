@@ -51,6 +51,11 @@ def build_titles_system_prompt(
         "happens', 'wait for it', 'must watch', 'gone wrong', y títulos genéricos "
         "tipo 'funny moment' o 'best clip'.",
         "Nada de TODO EN MAYÚSCULAS ni de emojis.",
+        "Un momento polémico se titula por la REACCIÓN, nunca por el "
+        "veredicto. 'Kai says WHAT on stream' sí; 'Kai's racist outburst' "
+        "no. Nunca afirmes como un hecho que una persona real es algo o ha "
+        "hecho algo malo: casi siempre es una broma sacada de contexto, y "
+        "escrito en el título deja de parecerlo.",
         "El título NO puede repetir el gancho que ya va escrito en pantalla: se leen "
         "juntos, así que tienen que decir cosas distintas.",
         "Dos títulos de esta tanda no pueden empezar con las mismas palabras: son "

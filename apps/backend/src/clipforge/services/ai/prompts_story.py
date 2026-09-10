@@ -40,6 +40,9 @@ def build_story_system_prompt(*, max_notes: int, max_note_chars: int) -> str:
         "acaba de pasar, por qué importa. Cada una en su segundo.",
         f"Una nota son {max_note_chars} caracteres como mucho. Si no se lee de "
         "un vistazo, la gente lee en vez de mirar el vídeo.",
+        "Un momento polémico se cuenta por la REACCIÓN, no por el veredicto. "
+        "Nunca afirmes como un hecho que alguien real es algo o ha hecho algo "
+        "malo: casi siempre es una broma sacada de contexto.",
         "NO TE INVENTES NADA. Todo lo que escribas tiene que salir de lo que se "
         "dice en el clip o del título del vídeo. Si no sabes quién habla, no lo "
         "nombres. Una nota que afirma algo que no ha pasado es peor que ninguna "
