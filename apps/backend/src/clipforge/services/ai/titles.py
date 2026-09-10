@@ -28,35 +28,19 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import Any
 
-import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from clipforge.core.config import settings
 from clipforge.core.errors import ExternalToolError
 from clipforge.core.logging import get_logger
 from clipforge.services.ai.base import AnalysisContext, ClipSuggestion, TitleBrief
+from clipforge.services.ai.client import ask_json, resolve_model
 from clipforge.services.ai.prompts_titles import (
     build_titles_system_prompt,
     build_titles_user_prompt,
 )
 
 logger = get_logger(__name__)
-
-#: Modelo por defecto de cada proveedor cuando el general no le sirve.
-DEFAULT_MODELS = {
-    "ollama": "qwen2.5:14b",
-    "openai": "gpt-4o-mini",
-    "anthropic": "claude-opus-5",
-}
-
-#: Cómo empieza el nombre de modelo de cada proveedor. Sirve para detectar
-#: que AI_MODEL trae el de otro y no mandarle a Anthropic un "qwen2.5:14b".
-MODEL_PREFIXES: dict[str, tuple[str, ...]] = {
-    "openai": ("gpt", "o1", "o3", "o4"),
-    "anthropic": ("claude",),
-}
-
-MAX_TOKENS = 4000
 
 #: Un poco de temperatura, al contrario que en el análisis. Con 0 las variantes
 #: de un mismo clip salen casi idénticas y el validador se queda sin recambio
@@ -452,137 +436,12 @@ def _schema() -> dict[str, Any]:
     return schema
 
 
-def _provider_and_model() -> tuple[str, str]:
-    """Proveedor y modelo del titulado, con los generales como respaldo."""
-    provider = (settings.ai_title_provider or settings.ai_provider).lower()
-    if provider not in DEFAULT_MODELS:
-        raise ExternalToolError(
-            f"Proveedor de titulado desconocido: '{provider}'",
-            details={"supported": sorted(DEFAULT_MODELS)},
-        )
-
-    model = settings.ai_title_model or settings.ai_model
-    # AI_MODEL es común a todos los proveedores: si trae el de otro, no sirve
-    # y hay que caer al de casa. Ollama no entra: ahí el modelo se llama
-    # como quiera quien lo haya descargado.
-    prefixes = MODEL_PREFIXES.get(provider)
-    if prefixes and not model.startswith(prefixes):
-        model = DEFAULT_MODELS[provider]
-    return provider, model
-
-
 def _ask_provider(system: str, user: str) -> str:
-    """Manda la petición al proveedor configurado y devuelve su JSON."""
-    provider, model = _provider_and_model()
-
-    if provider == "ollama":
-        return _ask_ollama(system, user, model)
-    if provider == "openai":
-        return _ask_openai(system, user, model)
-    return _ask_anthropic(system, user, model)
-
-
-def _ask_ollama(system: str, user: str, model: str) -> str:
-    base_url = settings.ollama_base_url.rstrip("/")
-    payload = {
-        "model": model,
-        "stream": False,
-        "format": _schema(),
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "options": {"temperature": TEMPERATURE, "num_ctx": 8192},
-    }
-
-    try:
-        response = httpx.post(
-            f"{base_url}/api/chat", json=payload, timeout=settings.ai_request_timeout_seconds
-        )
-        response.raise_for_status()
-        content = (response.json().get("message") or {}).get("content")
-    except httpx.HTTPStatusError as exc:
-        raise ExternalToolError(
-            f"Ollama ha respondido {exc.response.status_code} al titular",
-            details={"body": exc.response.text[:500]},
-        ) from exc
-    except httpx.HTTPError as exc:
-        raise ExternalToolError(
-            f"No se ha podido contactar con Ollama en {base_url} para titular",
-            details={"error": str(exc)},
-        ) from exc
-
-    if not content:
-        raise ExternalToolError("Ollama ha devuelto una respuesta vacía al titular")
-    return str(content)
-
-
-def _ask_openai(system: str, user: str, model: str) -> str:
-    from openai import OpenAI, OpenAIError
-
-    if not settings.openai_api_key:
-        raise ExternalToolError("El titulado usa OpenAI pero falta OPENAI_API_KEY")
-
-    client = OpenAI(
-        api_key=settings.openai_api_key,
-        timeout=settings.ai_request_timeout_seconds,
-        max_retries=settings.ai_max_retries,
+    """Le pide los títulos al modelo configurado para titular."""
+    return ask_json(
+        system,
+        user,
+        schema=_schema(),
+        choice=resolve_model(settings.ai_title_provider, settings.ai_title_model),
+        temperature=TEMPERATURE,
     )
-    try:
-        completion = client.chat.completions.create(
-            model=model,
-            temperature=TEMPERATURE,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": "clip_titles", "strict": True, "schema": _schema()},
-            },
-        )
-    except OpenAIError as exc:
-        raise ExternalToolError(
-            "La llamada de titulado a OpenAI ha fallado", details={"error": str(exc)[:500]}
-        ) from exc
-
-    content = completion.choices[0].message.content if completion.choices else None
-    if not content:
-        raise ExternalToolError("OpenAI ha devuelto una respuesta vacía al titular")
-    return str(content)
-
-
-def _ask_anthropic(system: str, user: str, model: str) -> str:
-    import anthropic
-
-    if not settings.anthropic_api_key:
-        raise ExternalToolError("El titulado usa Anthropic pero falta ANTHROPIC_API_KEY")
-
-    client = anthropic.Anthropic(
-        api_key=settings.anthropic_api_key,
-        timeout=float(settings.ai_request_timeout_seconds),
-        max_retries=settings.ai_max_retries,
-    )
-    try:
-        message = client.messages.create(
-            model=model,
-            max_tokens=MAX_TOKENS,
-            # Sin temperatura explícita: los tipos del SDK no la admiten junto
-            # a la salida estructurada, y su valor por defecto ya da variantes
-            # distintas, que es lo único que se le pedía aquí.
-            system=system,
-            messages=[{"role": "user", "content": user}],
-            output_config={"format": {"type": "json_schema", "schema": _schema()}},
-        )
-    except anthropic.APIError as exc:
-        raise ExternalToolError(
-            "La llamada de titulado a Anthropic ha fallado", details={"error": str(exc)[:500]}
-        ) from exc
-
-    if message.stop_reason == "refusal":
-        raise ExternalToolError("Anthropic ha rechazado titular por sus filtros de seguridad")
-
-    content = next((block.text for block in message.content if block.type == "text"), None)
-    if not content:
-        raise ExternalToolError("Anthropic ha devuelto una respuesta vacía al titular")
-    return str(content)

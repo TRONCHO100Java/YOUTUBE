@@ -123,6 +123,10 @@ class ClipSuggestion:
     description: str | None = None
     #: Etiquetas, sin la almohadilla. Siempre incluyen "shorts".
     hashtags: tuple[str, ...] = ()
+    #: Desglose del juez, si ha pasado por él. Va en un diccionario y no en
+    #: columnas porque su rúbrica tiene catorce dimensiones y cambiará: es
+    #: justo la parte del sistema que más se va a iterar.
+    judge_scores: dict[str, int] | None = None
     source: CandidateSource = CandidateSource.AI
     #: Puntuación directa, para los candidatos que no tienen desglose.
     signal_score: float | None = None

@@ -66,6 +66,11 @@ class ClipCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: Etiquetas sin almohadilla. La primera es siempre "shorts".
     hashtags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
+    #: Desglose del juez. En JSONB y no en columnas porque su rubrica tiene
+    #: catorce dimensiones y va a cambiar: es la parte del sistema que mas se
+    #: va a iterar, y una migracion por peso ajustado no tiene sentido.
+    judge_scores: Mapped[dict[str, int] | None] = mapped_column(JSONB, nullable=True)
+
     # Desglose de viralidad (total = 100).
     score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     hook_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-20

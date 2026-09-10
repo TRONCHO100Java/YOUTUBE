@@ -54,6 +54,7 @@ from clipforge.services.ai import (
     detect_profile,
     get_analyzer,
     get_block_analyzer,
+    judge_candidates,
     parse_keywords,
     rules_for,
     select_clips,
@@ -447,6 +448,12 @@ def _analyze_stage(project_id: uuid.UUID, log: Any) -> bool:
         log=log,
     )
 
+    # El detector ha propuesto en bruto; ahora se elige. Es la separación
+    # de la fase 20: quien propone no puede ser quien decide, porque nunca
+    # ve más de una ventana y compara cada momento contra nada.
+    if suggestions:
+        suggestions = judge_candidates(suggestions, context, limit=settings.max_clips_per_project)
+
     if suggestions:
         # El titulado va aquí y no antes: solo tiene sentido sobre los clips
         # que han sobrevivido al ranking, que son los que se van a publicar.
@@ -571,6 +578,7 @@ def _save_candidates(
                     title_variants=list(item.title_variants) or None,
                     description=item.description,
                     hashtags=list(item.hashtags) or None,
+                    judge_scores=item.judge_scores,
                     score=item.score,
                     hook_score=item.scores.hook if item.scores else None,
                     curiosity_score=item.scores.curiosity if item.scores else None,

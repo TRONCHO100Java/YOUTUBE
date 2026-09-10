@@ -169,6 +169,22 @@ class Settings(BaseSettings):
     #: Súbelo solo si usas un modelo grande, donde agrupar sale más barato.
     vision_blocks_per_request: int = 1
 
+    # ------------------------------------------------------------------- juez
+    #: Detectar y elegir dejan de ser lo mismo. El detector barre el video y
+    #: propone en bruto; el juez los ve todos juntos y decide. Apagarlo
+    #: devuelve el comportamiento anterior: manda la nota del detector.
+    judge_enabled: bool = True
+    #: Cuantos candidatos se le piden al detector antes de juzgar. Generoso a
+    #: proposito: el juez no puede elegir entre lo que nunca vio.
+    max_candidates_per_project: int = 30
+    #: Candidatos por peticion al juez. Treinta de golpe con catorce notas
+    #: cada uno es una respuesta enorme, y un modelo pequeno la trunca.
+    judge_batch_size: int = 10
+    #: Vacios = los generales. Es UNA llamada por proyecto y decide que se
+    #: publica: es el otro sitio donde compensa un modelo bueno.
+    ai_judge_provider: AIProvider | None = None
+    ai_judge_model: str | None = None
+
     # ---------------------------------------------------------------- montaje
     #: Quitar del clip el tiempo muerto: los huecos entre palabras que Whisper
     #: ya tiene medidos. Es la transformacion con mejor relacion
@@ -245,9 +261,13 @@ class Settings(BaseSettings):
 
     # ---------------------------------------------------------------- clips
     max_clips_per_project: int = 5
-    min_clip_duration: int = 20
-    max_clip_duration: int = 90
-    target_clip_duration: int = 45
+    #: Duraciones pensadas para Shorts, no para YouTube largo. El punto
+    #: optimo baja de 45 a 30 s: un clip mas corto se ve entero, y verlo
+    #: entero es lo que decide si se ensena a mas gente. El maximo sigue
+    #: dando aire a un momento que de verdad lo necesite.
+    min_clip_duration: int = 15
+    max_clip_duration: int = 60
+    target_clip_duration: int = 30
     # Duraciones del perfil visual: un gag se agota antes que una explicación.
     visual_min_clip_duration: int = 10
     visual_max_clip_duration: int = 60

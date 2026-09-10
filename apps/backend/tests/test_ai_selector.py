@@ -84,9 +84,12 @@ def test_every_window_is_analyzed() -> None:
     assert [w.number for w in analyzer.seen] == list(range(1, len(analyzer.seen) + 1))
 
 
-def test_result_respects_the_configured_limit() -> None:
+def test_the_detector_fills_the_pool_not_the_project() -> None:
+    """Detectar es proponer en bruto: quien recorta a cinco es el juez."""
     selected = select_clips(_segments(120), CONTEXT, RecordingAnalyzer())
-    assert len(selected) <= settings.max_clips_per_project
+
+    assert len(selected) <= settings.max_candidates_per_project
+    assert len(selected) > settings.max_clips_per_project
 
 
 def test_explicit_limit_overrides_the_setting() -> None:

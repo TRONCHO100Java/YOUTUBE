@@ -484,6 +484,51 @@ lee quien revisa los candidatos en el editor.
 Los subtítulos incrustados no entran en esta regla: son la transcripción literal del
 audio, así que hablan el idioma del vídeo.
 
+### El juez
+
+Hasta la fase 20, detectar y elegir eran la misma cosa: el modelo que leía la
+transcripción proponía momentos con su nota, y esa nota decidía. Dos problemas, y
+el segundo es el grave: **quien propone juzga su propio trabajo**, y **nunca ve más
+de una ventana de cinco minutos**, así que compara cada momento contra nada.
+
+Ahora son dos pasos:
+
+| | Qué hace | Cuántas llamadas |
+|---|---|---|
+| **Detector** | Barre el vídeo y propone en bruto: 30 candidatos, no 5 | Una por ventana |
+| **Juez** | Los ve todos juntos, los puntúa y elige | Una por tanda de 10 |
+
+La rúbrica del juez no pregunta "¿es interesante?". Pregunta lo que decide que un
+Short funcione, y **descuenta el lastre**:
+
+| Suma | | Resta | |
+|---|---:|---|---:|
+| `hook` fuerza del primer segundo | 18 | `context_needed` cuánto hay que saber de antes | −10 |
+| `payoff` hay remate de verdad | 15 | `dead_time` silencios, muletillas, relleno | −10 |
+| `curiosity` necesidad de saber cómo acaba | 12 | `weak_start` saludos, presentaciones, frases a medias | −10 |
+| `standalone` se entiende sin el original | 12 | | |
+| `humor` · `surprise` · `emotion` | 26 | | |
+| `controversy` · `person` · `shareability` · `comments` | 17 | | |
+
+El tiempo muerto y el contexto no restan por ser feos: **restan espectadores**.
+
+Un candidato por debajo de 45 no se publica, aunque sea de los mejores del vídeo —
+publicar cinco cosas mediocres hace más daño al canal que publicar dos buenas. Con
+una excepción heredada de la fase 6: si **nada** llega a la vara, se publica lo
+mejor que haya. Un clip mediocre es peor que uno bueno y mejor que ninguno.
+
+El total lo suma el sistema, no el modelo, y todo lo que devuelve se acota a su
+rango. El esquema que se le exige pide enteros, pero al **leer** se acepta
+cualquier cosa: perder una tanda de diez candidatos porque uno vino como `"mucho"`
+sería tirar el trabajo bueno por culpa del malo.
+
+### Duraciones de Shorts
+
+El punto óptimo baja de 45 s a **30**, con el máximo en 60. Un clip más corto se ve
+entero, y verlo entero es lo que decide si se enseña a más gente. Junto con la
+eliminación del tiempo muerto (§14), un momento de 45 s del original acaba en un
+Short de 30.
+
 ### Validación de lo que devuelve el modelo
 
 Todo lo que llega del LLM se trata como no fiable:
@@ -983,3 +1028,4 @@ Revisa siempre el fichero generado antes de aplicarlo.
 - [x] **FASE 17** — ingesta: búsqueda en YouTube y canales vigilados
 - [x] **FASE 18** — publicación en YouTube y lectura de vistas reales
 - [x] **FASE 19** — EditPlan y eliminación del tiempo muerto
+- [x] **FASE 20** — detector y juez separados, con rúbrica de Shorts

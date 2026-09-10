@@ -16,6 +16,7 @@ from clipforge.services.ai.base import (
     ClipSuggestion,
 )
 from clipforge.services.ai.factory import get_analyzer, get_block_analyzer
+from clipforge.services.ai.judge import judge_candidates
 from clipforge.services.ai.keywords import parse_keywords
 from clipforge.services.ai.profiles import ProfileRules, detect_profile, rules_for
 from clipforge.services.ai.selector import (
@@ -37,6 +38,7 @@ __all__ = [
     "detect_profile",
     "get_analyzer",
     "get_block_analyzer",
+    "judge_candidates",
     "parse_keywords",
     "rules_for",
     "select_clips",

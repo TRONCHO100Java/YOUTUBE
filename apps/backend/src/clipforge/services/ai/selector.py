@@ -89,7 +89,10 @@ def select_clips(
             details={"first_error": failures[0], "windows": len(windows)},
         )
 
-    selected = select_top(collected, limit=limit or settings.max_clips_per_project)
+    # El límite es el del POOL, no el del proyecto: aquí se detecta en
+    # bruto y quien elige es el juez. Recortar a cinco antes de juzgar era
+    # dejar la decisión en manos de quien nunca vio más de una ventana.
+    selected = select_top(collected, limit=limit or settings.max_candidates_per_project)
     logger.info(
         "ai.analysis_finished",
         proposed=len(collected),
@@ -134,7 +137,7 @@ def select_clips_from_blocks(
     suggestions = analyzer.analyze_blocks(
         shortlist, context, video_path=video_path, workdir=workdir
     )
-    selected = select_top(suggestions, limit=limit or settings.max_clips_per_project)
+    selected = select_top(suggestions, limit=limit or settings.max_candidates_per_project)
 
     logger.info(
         "ai.vision_finished",
