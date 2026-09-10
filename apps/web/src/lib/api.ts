@@ -8,6 +8,8 @@ import type {
   ProjectSummary,
   Readiness,
   SignalTimeline,
+  TaskRef,
+  TaskState,
 } from "@/lib/types";
 
 /** Error con la forma que devuelve el manejador central de la API. */
@@ -129,8 +131,40 @@ export function updateProjectKeywords(
  * El título no está dentro del MP4, así que esto cuesta segundos en vez de
  * todo el pipeline. No toca el gancho, que sí va incrustado en los píxeles.
  */
-export function retitleProject(id: string): Promise<ProjectDetail> {
-  return apiFetch<ProjectDetail>(`/api/projects/${id}/retitle`, { method: "POST" });
+export function retitleProject(id: string): Promise<TaskRef> {
+  return apiFetch<TaskRef>(`/api/projects/${id}/retitle`, { method: "POST" });
+}
+
+/** Estado de una tarea encolada. */
+export function getTask(taskId: string): Promise<TaskState> {
+  return apiFetch<TaskState>(`/api/tasks/${taskId}`);
+}
+
+/**
+ * Espera a que una tarea termine, preguntando cada poco.
+ *
+ * Un error de red aislado no se toma como final: el worker puede estar
+ * ocupado y la API tardar en responder, y abandonar a la primera dejaría al
+ * usuario sin saber si su trabajo se hizo. Lo que sí acaba la espera es el
+ * plazo: mejor decir "está tardando" que quedarse girando para siempre.
+ */
+export async function waitForTask(
+  taskId: string,
+  { intervalMs = 1500, timeoutMs = 180_000 }: { intervalMs?: number; timeoutMs?: number } = {},
+): Promise<TaskState | null> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    try {
+      const state = await getTask(taskId);
+      if (state.ready) return state;
+    } catch {
+      // Se reintenta en la siguiente vuelta.
+    }
+  }
+
+  return null;
 }
 
 /** Reprocesa un proyecto terminado o fallido. */

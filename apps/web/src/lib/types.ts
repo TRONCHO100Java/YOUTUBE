@@ -132,6 +132,27 @@ export interface GeneratedClip {
   encoder: string | null;
 }
 
+/** Lo que devuelve un endpoint que encola trabajo. */
+export interface TaskRef {
+  task_id: string;
+  state: string;
+}
+
+/**
+ * Estado de una tarea encolada.
+ *
+ * `PENDING` es ambiguo en Celery —"encolada" y "no la conozco" son el mismo
+ * estado— y por eso lo que se mira es `ready`, no el nombre del estado.
+ */
+export interface TaskState {
+  task_id: string;
+  state: string;
+  ready: boolean;
+  successful: boolean | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+}
+
 export interface Page<T> {
   items: T[];
   total: number;

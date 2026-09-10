@@ -178,6 +178,7 @@ pesado (Whisper y FFmpeg).
 | `PATCH` | `/api/candidates/{id}` | Ajusta entrada, salida, título, gancho o estado |
 | `POST` | `/api/candidates/{id}/render` | Encola el render de ese único clip |
 | `DELETE` | `/api/candidates/{id}` | Borra el candidato y su clip |
+| `GET` | `/api/tasks/{task_id}` | Estado de una tarea encolada |
 | `GET` | `/health`, `/health/ready` | Liveness y readiness |
 
 El navegador solo ve las cabeceras de respuesta que CORS le expone explícitamente. Sin
@@ -424,6 +425,18 @@ Dos cosas que **no** hace, y por el mismo motivo:
 Va a la cola ligera (`clipforge.titles.*`, fuera de la ruta de `clipforge.
 pipeline.*`): no necesita la tarjeta, así que con un segundo worker no tendrá que
 esperar detrás de una transcripción.
+
+El botón **espera a que termine**, y eso no es un detalle. Un botón que encola
+trabajo y devuelve 200 no dice nada: la petición ha ido bien, pero el trabajo ni
+ha empezado, y "no ha pasado nada" y "está tardando" se ven exactamente igual. La
+conclusión razonable, desde fuera, es que la aplicación está rota.
+
+`GET /api/tasks/{task_id}` saca el estado que Celery ya guarda en Redis
+(`task_track_started`), así que no hay estado nuevo que mantener. La interfaz
+encola, se queda con el id, pregunta cada segundo y medio y al acabar dice
+cuántos títulos han cambiado. `PENDING` es ambiguo —Celery no distingue
+"encolada" de "no la conozco"— y por eso lo que se mira es `ready`, no el nombre
+del estado: para quien espera, las dos son "todavía no".
 
 ### Lo que se pega en YouTube
 

@@ -21,6 +21,7 @@ from clipforge.api.schemas.project import (
     ProjectSummary,
     ProjectUpdate,
 )
+from clipforge.api.schemas.task import TaskRef
 from clipforge.api.schemas.transcript import TranscriptRead, TranscriptSegmentRead
 from clipforge.core.errors import ConflictError, NotFoundError, ValidationError
 from clipforge.core.logging import get_logger
@@ -224,10 +225,10 @@ async def retry_project(
 
 @router.post(
     "/{project_id}/retitle",
-    response_model=ProjectDetail,
+    response_model=TaskRef,
     summary="Reescribir solo los títulos de los clips",
 )
-async def retitle(project_id: uuid.UUID, repo: ProjectRepo) -> ProjectDetail:
+async def retitle(project_id: uuid.UUID, repo: ProjectRepo) -> TaskRef:
     """Vuelve a titular sin volver a renderizar.
 
     El título no está dentro del MP4, así que cambiarlo no cuesta ni una
@@ -246,9 +247,12 @@ async def retitle(project_id: uuid.UUID, repo: ProjectRepo) -> ProjectDetail:
             f"El proyecto está en curso ({project.status}); espera a que termine para retitularlo"
         )
 
-    retitle_project.delay(str(project.id))
-    logger.info("project.retitle_requested", project_id=str(project.id))
-    return ProjectDetail.from_model(project)
+    # Devuelve el id de la tarea y no el proyecto: retitular no cambia
+    # ningún campo del proyecto, así que devolverlo sería devolver algo
+    # idéntico a lo que el cliente ya tenía. Con el id puede esperar.
+    task = retitle_project.delay(str(project.id))
+    logger.info("project.retitle_requested", project_id=str(project.id), task_id=task.id)
+    return TaskRef(task_id=str(task.id), state=str(task.state))
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Borrar proyecto")

@@ -28,9 +28,17 @@ interface Props {
   projectId: string;
   /** Botón de regenerar del proyecto, para no dejar el estado vacío sin salida. */
   emptyAction?: ReactNode;
+  /**
+   * Cambiarlo obliga a releer los clips.
+   *
+   * Los clips no cambian solos, así que no se hace polling; pero sí cambian
+   * cuando algo de fuera los toca —retitular, por ejemplo— y entonces lo que
+   * hay pintado es de antes.
+   */
+  reloadKey?: number;
 }
 
-export function ClipList({ projectId, emptyAction }: Props) {
+export function ClipList({ projectId, emptyAction, reloadKey = 0 }: Props) {
   const [clips, setClips] = useState<GeneratedClip[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,7 +58,7 @@ export function ClipList({ projectId, emptyAction }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, reloadKey]);
 
   if (error) {
     return <p className="px-4 pb-4 text-sm text-rose-400">{error}</p>;

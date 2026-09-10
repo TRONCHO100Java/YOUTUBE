@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { ClipList } from "@/components/ClipList";
 import { RegenerateButton } from "@/components/RegenerateButton";
-import { retitleProject, retryProject } from "@/lib/api";
+import { retitleProject, retryProject, waitForTask } from "@/lib/api";
 import {
   isProjectRunning,
   PROJECT_STATUS_LABELS,
@@ -33,6 +33,13 @@ interface Props {
 export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
   const [retrying, setRetrying] = useState(false);
   const [retitling, setRetitling] = useState(false);
+  // Qué ha pasado con el último retitulado. Un botón que encola trabajo y no
+  // dice nada más se lee como un botón roto: la petición va bien, pero el
+  // trabajo tarda unos segundos y por la pantalla no pasa nada.
+  const [retitled, setRetitled] = useState<string | null>(null);
+  // Cambiarlo obliga a la lista de clips a releer: los títulos nuevos están
+  // en la base de datos, pero lo que hay pintado es de antes.
+  const [clipsKey, setClipsKey] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Rehacer un proyecto terminado tira lo que ya había y puede costar mucho
@@ -70,10 +77,27 @@ export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
 
   async function retitle() {
     setRetitling(true);
+    setRetitled(null);
     setError(null);
     try {
-      await retitleProject(project.id);
-      onChanged();
+      const { task_id } = await retitleProject(project.id);
+      const finished = await waitForTask(task_id);
+
+      if (finished === null) {
+        setRetitled("Está tardando más de lo normal. Sigue en marcha.");
+      } else if (finished.successful) {
+        const count = Number(finished.result?.retitled ?? 0);
+        setRetitled(
+          count > 0
+            ? `${count} ${count === 1 ? "título reescrito" : "títulos reescritos"}`
+            : "Sin cambios: los títulos que había siguen siendo los mejores",
+        );
+        // Los clips que hay pintados llevan el título viejo.
+        setClipsKey((value) => value + 1);
+        onChanged();
+      } else {
+        setError(finished.error ?? "No se han podido reescribir los títulos");
+      }
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : "No se han podido reescribir");
     } finally {
@@ -156,6 +180,14 @@ export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
                 : "Encolado. Si no arranca en unos segundos, comprueba que la ventana del worker siga abierta y pulsa Reencolar."}
             </p>
           )}
+          {retitling && (
+            <p className="mt-1 text-xs text-zinc-500">
+              Reescribiendo los títulos con la IA. Tarda unos segundos.
+            </p>
+          )}
+          {retitled && !retitling && (
+            <p className="mt-1 text-xs text-emerald-400/80">{retitled}</p>
+          )}
           {error && <p className="mt-1 text-xs text-rose-400">{error}</p>}
         </div>
 
@@ -194,7 +226,7 @@ export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
             title="Vuelve a escribir los títulos con la IA. No re-renderiza nada"
             className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-white/20 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {retitling ? "Encolando…" : "Retitular"}
+            {retitling ? "Reescribiendo…" : "Retitular"}
           </button>
         )}
 
@@ -204,7 +236,7 @@ export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
       {/* Se monta solo al desplegar: así no se piden los clips de cada
           proyecto de la lista sin que nadie los haya mirado. */}
       {completed && expanded && (
-        <ClipList projectId={project.id} emptyAction={reprocessButton} />
+        <ClipList projectId={project.id} reloadKey={clipsKey} emptyAction={reprocessButton} />
       )}
     </li>
   );
