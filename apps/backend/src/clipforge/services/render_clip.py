@@ -113,6 +113,9 @@ class RenderSetup:
     trim_silences: bool = True
     #: Duración mínima del perfil. El recorte no puede bajar de aquí.
     min_clip_duration: float = 0.0
+    #: Cierre del canal de destino, a pegar al final de cada clip. None
+    #: cuando el proyecto no va a un canal fijo o el canal no tiene cierre.
+    outro: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +150,7 @@ def build_setup(
     trim_silences: bool = True,
     peaks: list[Peak] | None = None,
     min_clip_duration: float = 0.0,
+    outro: Path | None = None,
 ) -> RenderSetup:
     """Prepara encoder y encuadre para todos los clips de un proyecto.
 
@@ -168,6 +172,7 @@ def build_setup(
         smart_crop=settings.smart_crop,
         burn_subtitles=burn_subtitles,
         trim_silences=trim_silences and settings.smart_trimming,
+        outro=outro.name if outro else None,
     )
     return RenderSetup(
         source=source,
@@ -183,6 +188,7 @@ def build_setup(
         burn_subtitles=burn_subtitles,
         trim_silences=trim_silences,
         min_clip_duration=min_clip_duration,
+        outro=outro,
     )
 
 
@@ -437,6 +443,7 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         subtitles=burn_path,
         crop=framing,
         encoder=setup.encoder,
+        outro=setup.outro,
     )
     setup.storage.assert_within_root(result.path)
 

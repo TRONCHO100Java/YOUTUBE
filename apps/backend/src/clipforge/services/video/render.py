@@ -49,6 +49,7 @@ def render_vertical_clip(
     subtitles: Path | None = None,
     crop: CropFilter | None = None,
     encoder: EncoderProfile | None = None,
+    outro: Path | None = None,
 ) -> RenderResult:
     """Extrae `[start, end)` del original y lo deja en vertical 9:16.
 
@@ -59,6 +60,9 @@ def render_vertical_clip(
         zoom: filtro `zoompan` ya montado, o None para no acercar nada.
         subtitles: `.ass` a quemar. Si es None, el clip sale sin subtítulos.
         crop: ventana o plan de recorte. Si es None, se centra.
+        outro: cierre del canal a pegar al final, o None. Va dentro de la
+            misma pasada de ffmpeg: pegarlo después obligaría a recodificar
+            el clip entero por segunda vez y a perder calidad por el camino.
 
     Raises:
         ExternalToolError: si el rango es inválido o ffmpeg falla.
@@ -72,6 +76,11 @@ def render_vertical_clip(
         )
     if not source.is_file():
         raise ExternalToolError(f"No existe el vídeo de origen: {source}")
+    # Un cierre que falta no puede tirar el render: el clip sin cierre sirve,
+    # y perderlo entero por los últimos cuatro segundos sería desproporcionado.
+    if outro is not None and not outro.is_file():
+        logger.warning("render.outro_missing", outro=str(outro))
+        outro = None
 
     probed = probe_video(source)
     window = crop or center_crop(
@@ -104,6 +113,10 @@ def render_vertical_clip(
     # falta un filtergraph que recorte cada trozo y los concatene. Sigue
     # siendo UNA pasada de ffmpeg; lo que cambia es la forma del grafo.
     graph = _concat_graph(cuts, start, filters, audio_filters) if len(cuts) > 1 else None
+    # Con cierre siempre hace falta grafo, aunque el clip sea de un solo tramo:
+    # pegar un segundo vídeo no cabe en `-vf`, que solo ve una entrada.
+    if outro is not None:
+        graph = _outro_graph(graph, filters, audio_filters, fps=probed.fps)
     # -t abarca hasta el final del último tramo: dentro del grafo se tira lo
     # que sobra, pero ffmpeg tiene que haber decodificado hasta ahí.
     decode_span = (cuts[-1][1] - start) if len(cuts) > 1 else duration
@@ -122,8 +135,19 @@ def render_vertical_clip(
         f"{decode_span:.3f}",
         "-i",
         str(source),
+        # El cierre entra como segunda entrada. Va DESPUÉS del -t de la
+        # primera: esos flags son posicionales y afectan a la entrada que
+        # tienen detrás, así que colarlo antes recortaría el original.
+        *(["-i", str(outro)] if outro is not None else []),
         *(
-            ["-filter_complex", graph, "-map", "[v]", "-map", "[a]"]
+            [
+                "-filter_complex",
+                graph,
+                "-map",
+                "[vout]" if outro is not None else "[v]",
+                "-map",
+                "[aout]" if outro is not None else "[a]",
+            ]
             if graph is not None
             else [
                 "-vf",
@@ -180,6 +204,45 @@ def render_vertical_clip(
         encoder=profile.name,
         has_burned_subtitles=subtitles is not None,
     )
+
+
+def _outro_graph(
+    graph: str | None,
+    video_filters: Sequence[str],
+    audio_filters: Sequence[str],
+    *,
+    fps: float,
+) -> str:
+    """Añade el cierre del canal al final del clip, en la misma pasada.
+
+    El `concat` de ffmpeg exige que los dos trozos coincidan en tamaño, en
+    relación de aspecto, en formato de píxel y en frecuencia de muestreo. El
+    cierre viene de una plantilla suya —otro tamaño de audio, otros fps— así
+    que se le fuerza a la forma del clip antes de pegarlo. Sin eso, `concat`
+    falla o, peor, cuela un cierre con el sonido a destiempo.
+
+    Los fps se igualan a los del original y no a un número fijo para no
+    cambiar de paso el ritmo de los clips que no llevan cierre.
+    """
+    parts = [graph] if graph is not None else []
+    if graph is None:
+        # Sin montaje previo, el clip principal todavía es la entrada cruda.
+        parts.append(f"[0:v]{','.join(video_filters)}[v]")
+        parts.append(f"[0:a]{','.join(audio_filters)}[a]" if audio_filters else "[0:a]anull[a]")
+
+    shared_audio = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
+    parts.append(
+        f"[1:v]scale={settings.output_width}:{settings.output_height}:flags=lanczos,"
+        f"setsar=1,fps={fps:.5f},format=yuv420p[ov]"
+    )
+    parts.append(f"[1:a]{shared_audio}[oa]")
+    # También al clip: el original puede venir a 96 kHz y el cierre a 44,1, y
+    # `concat` no remuestrea por su cuenta.
+    parts.append("[v]format=yuv420p[mv]")
+    parts.append(f"[a]{shared_audio}[ma]")
+    parts.append("[mv][ma][ov][oa]concat=n=2:v=1:a=1[vout][aout]")
+
+    return ";".join(parts)
 
 
 def _concat_graph(

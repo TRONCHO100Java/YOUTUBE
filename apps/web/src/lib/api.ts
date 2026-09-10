@@ -284,7 +284,13 @@ export function createPublishChannel(input: {
 
 export function updatePublishChannel(
   id: string,
-  patch: { enabled?: boolean; priority?: number; minScore?: number },
+  patch: {
+    enabled?: boolean;
+    priority?: number;
+    minScore?: number;
+    outro_handle?: string;
+    outro_tagline?: string;
+  },
 ): Promise<PublishChannel> {
   return apiFetch<PublishChannel>(`/api/publish-channels/${id}`, {
     method: "PATCH",
@@ -292,6 +298,8 @@ export function updatePublishChannel(
       enabled: patch.enabled,
       priority: patch.priority,
       min_score: patch.minScore,
+      outro_handle: patch.outro_handle,
+      outro_tagline: patch.outro_tagline,
     }),
   });
 }
@@ -301,6 +309,18 @@ export function deletePublishChannel(id: string): Promise<void> {
 }
 
 /** Vista previa del reparto: qué clip va a qué canal. No cambia nada. */
+/**
+ * Fabrica el vídeo de cierre de un canal con su nombre.
+ *
+ * Aparte de editar el nombre a propósito: cuesta una recodificación, y
+ * quien está escribiendo el nombre puede ir por la mitad.
+ */
+export function buildChannelOutro(id: string): Promise<PublishChannel> {
+  return apiFetch<PublishChannel>(`/api/publish-channels/${id}/outro`, {
+    method: "POST",
+  });
+}
+
 export function listRouting(): Promise<RoutedClip[]> {
   return apiFetch<RoutedClip[]>("/api/publish-channels/routing");
 }

@@ -211,6 +211,12 @@ export interface PublishChannel {
   /** A igualdad de encaje, gana el más alto. */
   priority: number;
   notes: string | null;
+  /** Nombre con arroba que sale en el cierre de sus clips. */
+  outro_handle: string | null;
+  /** Línea roja del cierre. null = la que trae la plantilla. */
+  outro_tagline: string | null;
+  /** Si el vídeo de cierre ya está construido, no solo escrito. */
+  has_outro: boolean;
   created_at: string;
 }
 

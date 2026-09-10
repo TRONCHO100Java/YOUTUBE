@@ -41,6 +41,18 @@ class PublishChannel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: con el mismo nombre; no es imprescindible para subir.
     youtube_channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # ------------------------------------------------ el cierre de este canal
+    #: Nombre con arroba que sale en el cierre: "@ClipRushViralRush". Es lo
+    #: unico que cambia de un canal a otro; el resto lo pone la plantilla.
+    outro_handle: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    #: La linea roja de debajo. Vacia = la que trae la plantilla, que ya
+    #: vale para cualquier canal.
+    outro_tagline: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    #: Donde quedo el cierre ya construido. Se guarda en vez de rehacerlo en
+    #: cada render: son los mismos cuatro segundos para los cien clips del
+    #: canal, y rehacerlo cada vez seria pagar cien veces lo mismo.
+    outro_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     #: Apagarlo deja de enrutarle clips sin perder su configuracion.
     enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", nullable=False

@@ -38,6 +38,18 @@ class PublishChannelBase(BaseModel):
     )
     priority: int = Field(0, ge=0, le=100, description="A igualdad de encaje, gana el más alto")
     notes: str | None = Field(None, max_length=1000, description="Para qué es este canal")
+    outro_handle: str | None = Field(
+        None,
+        max_length=120,
+        description="Nombre con arroba que sale en el cierre",
+        examples=["@ClipRushViralRush"],
+    )
+    outro_tagline: str | None = Field(
+        None,
+        max_length=120,
+        description="Línea roja del cierre. Vacía = la de la plantilla",
+        examples=["NEW CLIPS EVERY DAY"],
+    )
 
 
 class PublishChannelCreate(PublishChannelBase):
@@ -72,6 +84,8 @@ class PublishChannelUpdate(BaseModel):
     min_score: float | None = Field(None, ge=0, le=100)
     priority: int | None = Field(None, ge=0, le=100)
     notes: str | None = Field(None, max_length=1000)
+    outro_handle: str | None = Field(None, max_length=120)
+    outro_tagline: str | None = Field(None, max_length=120)
 
 
 class PublishChannelRead(PublishChannelCreate):
@@ -82,6 +96,9 @@ class PublishChannelRead(PublishChannelCreate):
     id: uuid.UUID
     enabled: bool
     youtube_channel_id: str | None
+    #: Si el cierre ya está construido. El texto solo dice qué DEBERÍA
+    #: poner; esto dice si existe el vídeo que lo pone.
+    has_outro: bool
     created_at: datetime
 
 

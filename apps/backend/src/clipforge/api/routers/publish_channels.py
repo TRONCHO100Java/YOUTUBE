@@ -7,6 +7,7 @@ solo se decide el destino.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Query, status
@@ -20,10 +21,17 @@ from clipforge.api.schemas.publish_channel import (
     PublishChannelUpdate,
     RoutedClip,
 )
-from clipforge.core.errors import NotFoundError
+from clipforge.core.errors import NotFoundError, ValidationError
 from clipforge.core.logging import get_logger
+from clipforge.core.storage import relative_to_storage
 from clipforge.db.models import ClipCandidate, GeneratedClip, PublishChannel
 from clipforge.services.publish import ClipFacts, route
+from clipforge.services.video.outro import (
+    OutroText,
+    build_outro,
+    outro_path_for,
+    outro_template,
+)
 
 router = APIRouter(prefix="/publish-channels", tags=["publish"])
 logger = get_logger(__name__)
@@ -55,6 +63,8 @@ async def create_channel(payload: PublishChannelCreate, session: DbSession) -> P
         min_score=payload.min_score,
         priority=payload.priority,
         notes=(payload.notes or "").strip() or None,
+        outro_handle=(payload.outro_handle or "").strip() or None,
+        outro_tagline=(payload.outro_tagline or "").strip() or None,
     )
     session.add(channel)
     await session.commit()
@@ -90,6 +100,13 @@ async def update_channel(
         channel.priority = payload.priority
     if payload.notes is not None:
         channel.notes = payload.notes.strip() or None
+    # Cambiar el texto NO rehace el cierre: eso se pide aparte, porque
+    # cuesta una recodificacion y quien edita el nombre puede estar a
+    # mitad de ajustarlo.
+    if payload.outro_handle is not None:
+        channel.outro_handle = payload.outro_handle.strip() or None
+    if payload.outro_tagline is not None:
+        channel.outro_tagline = payload.outro_tagline.strip() or None
 
     await session.commit()
     await session.refresh(channel)
@@ -155,6 +172,50 @@ async def routing(
     return routed
 
 
+@router.post(
+    "/{channel_id}/outro",
+    response_model=PublishChannelRead,
+    summary="Fabricar el cierre de este canal",
+)
+async def build_channel_outro(channel_id: uuid.UUID, session: DbSession) -> PublishChannelRead:
+    """Construye el vídeo de cierre con el nombre de este canal.
+
+    Sale de una plantilla compartida: lo único que cambia entre canales es
+    el nombre, así que recrear la animación del logo para cada uno sería
+    rehacer a mano algo que ya está hecho.
+
+    Se llama a mano y no en cada render porque son los mismos cuatro
+    segundos para los cien clips del canal. Volver a llamarlo después de
+    cambiar el nombre es lo que lo actualiza.
+    """
+    channel = await _require(channel_id, session)
+
+    handle = (channel.outro_handle or "").strip()
+    if not handle:
+        raise ValidationError(
+            "Este canal no tiene nombre para el cierre. Ponle uno antes de generarlo."
+        )
+
+    template = outro_template()
+    if not template.is_file():
+        raise NotFoundError("No hay plantilla de cierre en storage/outros/template.mp4")
+
+    destination = outro_path_for(channel_id)
+    await asyncio.to_thread(
+        build_outro,
+        template,
+        destination,
+        OutroText(handle=handle, tagline=channel.outro_tagline),
+    )
+
+    channel.outro_path = relative_to_storage(destination)
+    await session.commit()
+    await session.refresh(channel)
+
+    logger.info("publish.outro_built", channel=channel.name, handle=handle)
+    return _read(channel)
+
+
 # ------------------------------------------------------------------ privado
 async def _require(channel_id: uuid.UUID, session: DbSession) -> PublishChannel:
     channel = await session.get(PublishChannel, channel_id)
@@ -182,5 +243,8 @@ def _read(channel: PublishChannel) -> PublishChannelRead:
         min_score=channel.min_score,
         priority=channel.priority,
         notes=channel.notes,
+        outro_handle=channel.outro_handle,
+        outro_tagline=channel.outro_tagline,
+        has_outro=bool(channel.outro_path),
         created_at=channel.created_at,
     )

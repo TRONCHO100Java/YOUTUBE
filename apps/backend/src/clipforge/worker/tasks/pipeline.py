@@ -671,6 +671,7 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
         segments = subtitle_segments(session, project_id)
         words = transcript_words(session, project_id)
         peaks = clip_peaks(project.signals)
+        outro = _channel_outro(session, project)
         project.status = ProjectStatus.GENERATING_CLIPS
 
     if not plans:
@@ -686,6 +687,7 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
         trim_silences=rules.trim_silences,
         peaks=peaks,
         min_clip_duration=rules.min_duration,
+        outro=outro,
     )
     log.info("pipeline.render_started", clips=len(plans), encoder=setup.encoder.name)
 
@@ -825,6 +827,30 @@ def subtitle_segments(session: Session, project_id: uuid.UUID) -> list[SourceSeg
         SourceSegment(start=row.start_time, end=row.end_time, text=row.text)
         for row in _transcript_rows(session, project_id)
     ]
+
+
+def _channel_outro(session: Session, project: Project) -> Path | None:
+    """Cierre del canal al que va este proyecto, si lo tiene.
+
+    Se resuelve una vez por proyecto y no por clip: son los mismos cuatro
+    segundos para los doce clips del vídeo.
+
+    Un cierre configurado que ya no está en disco no se trata como error.
+    El clip sin cierre sigue sirviendo, y tirar el render entero por los
+    últimos segundos sería desproporcionado; el render lo avisa en el log.
+    """
+    if project.publish_channel_id is None:
+        return None
+
+    channel = session.get(PublishChannel, project.publish_channel_id)
+    if channel is None or not channel.outro_path:
+        return None
+
+    try:
+        return absolute_from_storage(channel.outro_path)
+    except ValueError:
+        logger.warning("pipeline.outro_outside_storage", path=channel.outro_path)
+        return None
 
 
 def _export_folder_name(session: Session, project: Project) -> str | None:

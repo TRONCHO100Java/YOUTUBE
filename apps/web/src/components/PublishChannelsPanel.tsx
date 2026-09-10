@@ -4,6 +4,7 @@ import { useCallback, useState, type FormEvent } from "react";
 
 import { usePolling } from "@/hooks/usePolling";
 import {
+  buildChannelOutro,
   createPublishChannel,
   deletePublishChannel,
   listPublishChannels,
@@ -54,6 +55,10 @@ export function PublishChannelsPanel() {
   const [minScore, setMinScore] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Por canal: generar un cierre tarda unos segundos y hay que saber a
+  // cuál de los diez se le está haciendo.
+  const [buildingId, setBuildingId] = useState<string | null>(null);
+  const [handles, setHandles] = useState<Record<string, string>>({});
 
   async function handleAdd(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,7 +92,7 @@ export function PublishChannelsPanel() {
     }
   }
 
-  async function act(action: () => Promise<unknown>) {
+  async function act(action: () => Promise<unknown>): Promise<void> {
     setFormError(null);
     try {
       await action();
@@ -222,6 +227,53 @@ export function PublishChannelsPanel() {
                       .join("  ·  ") || "Acepta cualquier clip"}
                   </p>
                 </div>
+
+                {/* El cierre: el nombre que sale al final de sus clips. Se
+                    escribe aquí y se fabrica aparte, porque generarlo
+                    cuesta una recodificación. */}
+                <input
+                  type="text"
+                  value={handles[channel.id] ?? channel.outro_handle ?? ""}
+                  onChange={(event) =>
+                    setHandles((current) => ({
+                      ...current,
+                      [channel.id]: event.target.value,
+                    }))
+                  }
+                  onBlur={(event) => {
+                    const value = event.target.value.trim();
+                    if (value === (channel.outro_handle ?? "")) return;
+                    void act(() =>
+                      updatePublishChannel(channel.id, { outro_handle: value }),
+                    );
+                  }}
+                  placeholder="@nombre del cierre"
+                  aria-label={`Nombre en el cierre de ${channel.name}`}
+                  title="El nombre que sale al final de cada clip de este canal"
+                  className="w-40 shrink-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-300 placeholder:text-zinc-600 focus:border-emerald-400/50 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={buildingId !== null}
+                  onClick={() => {
+                    setBuildingId(channel.id);
+                    void act(() => buildChannelOutro(channel.id)).finally(() =>
+                      setBuildingId(null),
+                    );
+                  }}
+                  title="Fabrica el vídeo de cierre con este nombre"
+                  className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    channel.has_outro
+                      ? "border-emerald-400/30 text-emerald-400/90 hover:border-emerald-400/60"
+                      : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-zinc-200"
+                  }`}
+                >
+                  {buildingId === channel.id
+                    ? "Generando…"
+                    : channel.has_outro
+                      ? "Cierre ✓"
+                      : "Generar cierre"}
+                </button>
 
                 {/* Un enlace a ninguna parte seria peor que no tenerlo: */}
                 {channel.url ? (
