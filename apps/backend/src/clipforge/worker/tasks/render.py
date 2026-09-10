@@ -35,6 +35,7 @@ from clipforge.worker.tasks.pipeline import (
     export_project_clips,
     render_and_store,
     subtitle_segments,
+    transcript_words,
     update_candidate,
 )
 
@@ -106,8 +107,10 @@ def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any, uuid.UUID]:
         )
         project_id = project.id
         video_relative = project.source_video_path
-        burn = rules_for(project.content_profile or ContentProfile.TALKING).burn_subtitles
+        rules = rules_for(project.content_profile or ContentProfile.TALKING)
+        burn = rules.burn_subtitles
         segments = subtitle_segments(session, project_id)
+        words = transcript_words(session, project_id)
 
     source = absolute_from_storage(video_relative)
     if not source.is_file():
@@ -116,7 +119,15 @@ def _prepare(candidate_id: uuid.UUID) -> tuple[ClipRenderPlan, Any, uuid.UUID]:
             "proyecto para descargarlo otra vez."
         )
 
-    setup = build_setup(project_id, source, segments, burn_subtitles=burn, sample_at=plan.start)
+    setup = build_setup(
+        project_id,
+        source,
+        segments,
+        burn_subtitles=burn,
+        sample_at=plan.start,
+        words=words,
+        trim_silences=rules.trim_silences,
+    )
     return plan, setup, project_id
 
 

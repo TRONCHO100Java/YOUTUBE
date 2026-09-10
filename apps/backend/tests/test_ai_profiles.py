@@ -137,3 +137,12 @@ def test_the_visual_profile_uses_shorter_clips() -> None:
 def test_the_visual_profile_does_not_burn_subtitles() -> None:
     """Sin diálogo utilizable, incrustar subtítulos es incrustar ruido."""
     assert rules_for(ContentProfile.VISUAL).burn_subtitles is False
+
+
+def test_a_talking_clip_gets_its_silences_removed() -> None:
+    assert rules_for(ContentProfile.TALKING).trim_silences is True
+
+
+def test_a_visual_clip_keeps_its_silences() -> None:
+    """En una caída el silencio ES el chiste: cortarlo arruina el remate."""
+    assert rules_for(ContentProfile.VISUAL).trim_silences is False

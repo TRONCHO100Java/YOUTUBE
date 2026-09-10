@@ -13,16 +13,18 @@ fichero.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from clipforge.core.config import settings
 from clipforge.core.errors import ExternalToolError
 from clipforge.core.logging import get_logger
 from clipforge.core.storage import ProjectStorage, StorageArea
+from clipforge.services.edit import EditPlan, TrimRules, Word, plan_trim
 from clipforge.services.subtitles import (
     HookStyle,
     SourceSegment,
+    SubtitleCue,
     build_cues,
     write_ass,
     write_srt,
@@ -77,6 +79,10 @@ class RenderSetup:
     source: Path
     storage: ProjectStorage
     segments: list[SourceSegment]
+    #: Tiempos por palabra de toda la transcripción. Es lo que permite
+    #: saber dónde hay silencio sin volver a analizar el audio: Whisper ya
+    #: los midió y hasta ahora no los usaba nadie.
+    words: list[Word]
     encoder: EncoderProfile
     #: Región con imagen real del original, ya sin letterbox.
     content: CropWindow
@@ -84,6 +90,8 @@ class RenderSetup:
     source_width: int
     source_height: int
     burn_subtitles: bool
+    #: Si en este perfil de contenido tiene sentido quitar los silencios.
+    trim_silences: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +119,8 @@ def build_setup(
     *,
     burn_subtitles: bool,
     sample_at: float = 0.0,
+    words: list[Word] | None = None,
+    trim_silences: bool = True,
 ) -> RenderSetup:
     """Prepara encoder y encuadre para todos los clips de un proyecto.
 
@@ -131,16 +141,19 @@ def build_setup(
         content=content.to_filter(),
         smart_crop=settings.smart_crop,
         burn_subtitles=burn_subtitles,
+        trim_silences=trim_silences and settings.smart_trimming,
     )
     return RenderSetup(
         source=source,
         storage=ProjectStorage(project_id),
         segments=segments,
+        words=words or [],
         encoder=encoder,
         content=content,
         source_width=probed.width,
         source_height=probed.height,
         burn_subtitles=burn_subtitles,
+        trim_silences=trim_silences,
     )
 
 
@@ -186,6 +199,55 @@ def plan_framing(plan: ClipRenderPlan, setup: RenderSetup) -> CropPlan:
     )
 
 
+def plan_edit(plan: ClipRenderPlan, setup: RenderSetup) -> EditPlan:
+    """Decide qué tramos del original se quedan en el clip.
+
+    Con `SMART_TRIMMING` apagado, o sin palabras que mirar, devuelve el
+    plan de siempre: un rango continuo. Es el mismo camino que el código
+    llevaba recorriendo desde la fase 5, así que apagar el interruptor
+    devuelve el comportamiento anterior exacto.
+    """
+    if not settings.smart_trimming or not setup.trim_silences or not setup.words:
+        return EditPlan.single(plan.start, plan.end)
+
+    return plan_trim(
+        setup.words,
+        start=plan.start,
+        end=plan.end,
+        rules=TrimRules(
+            min_gap=settings.trim_min_gap_seconds,
+            padding=settings.trim_padding_seconds,
+            min_beat=settings.trim_min_beat_seconds,
+            max_removed_ratio=settings.trim_max_removed_ratio,
+        ),
+    )
+
+
+def build_plan_cues(edit: EditPlan, setup: RenderSetup) -> list[SubtitleCue]:
+    """Subtítulos del clip, ya en tiempos del MONTAJE y no del original.
+
+    Se construyen tramo a tramo y se desplazan: cada uno empieza donde
+    acaba el anterior en el clip final. Sin esto, quitar cuatro segundos
+    de silencio dejaría todos los subtítulos posteriores cuatro segundos
+    por detrás de lo que se oye — que es peor que no ponerlos.
+    """
+    cues: list[SubtitleCue] = []
+    elapsed = 0.0
+
+    for beat, _ in edit.offsets():
+        for cue in build_cues(setup.segments, beat.start, beat.end):
+            cues.append(
+                replace(
+                    cue,
+                    start=round(cue.start + elapsed, 3),
+                    end=round(cue.end + elapsed, 3),
+                )
+            )
+        elapsed += beat.duration
+
+    return cues
+
+
 def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
     """Genera el .srt y el .mp4 de un candidato.
 
@@ -193,7 +255,8 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
         ExternalToolError: si el rango es inválido o ffmpeg falla.
     """
     framing = plan_framing(plan, setup)
-    cues = build_cues(setup.segments, plan.start, plan.end)
+    edit = plan_edit(plan, setup)
+    cues = build_plan_cues(edit, setup)
 
     # Dos ficheros con el mismo contenido y distinto propósito: el .srt es el
     # que se entrega para publicar el clip, el .ass es el que se incrusta.
@@ -227,8 +290,9 @@ def render_clip(plan: ClipRenderPlan, setup: RenderSetup) -> RenderedClip:
     result = render_vertical_clip(
         setup.source,
         setup.storage.path_for(StorageArea.CLIPS, f"{plan.stem}.mp4"),
-        start=plan.start,
-        end=plan.end,
+        start=edit.source_start,
+        end=edit.source_end,
+        beats=[(beat.start, beat.end) for beat in edit.beats],
         # Sin subtítulos quemados el .srt sigue quedando en disco, para poder
         # publicar el clip limpio y subirlos aparte.
         subtitles=burn_path,

@@ -757,7 +757,73 @@ no hacen falta credenciales ni se gasta cuota. Es menos preciso que el panel de
 YouTube —no hay retención ni impresiones— pero responde a la única pregunta que se
 estaba haciendo: de estos cinco clips, ¿cuál funcionó?
 
-## 14. Vídeos que no hablan
+## 14. Montaje: el clip deja de ser el original recortado
+
+Un clip era **un rango continuo**: entrada, salida y a codificar. Eso vale mientras
+el clip sea el original con las puntas cortadas, y deja de valer en cuanto se
+quiere editar de verdad. En el instante en que se elimina un trozo de en medio, la
+línea de tiempo del clip **deja de ser la del original** y todo lo que depende de
+tiempos —subtítulos, gancho, encuadre— apunta al sitio equivocado.
+
+### El EditPlan
+
+`services/edit/plan.py` describe el montaje antes de tocar un fotograma: una lista
+ordenada de tramos (`Beat`) del original que sobreviven, y la traducción de
+cualquier instante del original al instante en que aparece en el clip final.
+
+Un plan de un solo tramo es exactamente lo de siempre, y por eso el camino antiguo
+sigue intacto: si nadie ha cortado nada, no hay nada nuevo que pueda romperse.
+Apagar `SMART_TRIMMING` devuelve el comportamiento anterior exacto.
+
+### Quitar el tiempo muerto
+
+Los datos ya estaban y no los usaba nadie: Whisper guarda el tiempo de **cada
+palabra** desde la fase 3. Los huecos entre palabras son el silencio real, medido,
+sin volver a tocar el audio.
+
+Medido sobre los proyectos reales del repositorio:
+
+| Clip | Antes | Después |
+|---|---:|---:|
+| Among Us #1 | 88,5 s | **58,4 s** |
+| Among Us #3 | 74,8 s | **53,4 s** |
+| Streamer lobby #3 | 89,0 s | **70,4 s** |
+
+Tres reglas evitan que el remedio sea peor:
+
+- **Se corta por el hueco, con margen a cada lado.** Sin él se come la consonante
+  inicial y el montaje suena atropellado.
+- **Ningún tramo queda diminuto.** Una sucesión de trozos de tres décimas no es
+  ritmo, es un tartamudeo.
+- **Hay un tope de cuánto se quita por dentro**, y cuando se supera se conservan
+  los huecos más grandes hasta llegar al límite, en vez de renunciar a cortar.
+  Renunciar dejaba el clip entero con todas sus pausas: el peor de los dos mundos.
+
+**Las puntas no cuentan para ese tope**, y es deliberado: quitar el silencio de
+delante y de detrás no es editar el contenido, es elegir bien la entrada y la
+salida. El de delante es además el peor de todos — son justo los segundos en los
+que se decide si alguien se queda.
+
+### Lo que no se toca
+
+El perfil visual **no se recorta**. En una caída, un tropiezo o un gag físico el
+silencio *es* el chiste: la pausa antes del golpe, el segundo de desconcierto
+después. Cortarlo por "no aportar" es exactamente lo que arruina el tiempo cómico.
+Va en `ProfileRules.trim_silences`, junto a `burn_subtitles`, porque es la misma
+clase de decisión.
+
+### Un solo ffmpeg, con o sin cortes
+
+Con varios tramos el render deja de caber en `-vf` y pasa a un `filter_complex` que
+recorta cada trozo, los concatena y aplica encima el recorte, el escalado y los
+subtítulos —una sola vez, no por tramo—. Sigue siendo **una pasada**: lo que cambia
+es la forma del grafo, no el número de codificaciones.
+
+Los subtítulos se generan tramo a tramo y se desplazan. Sin eso, quitar cuatro
+segundos de silencio dejaría todo lo posterior cuatro segundos por detrás de lo que
+se oye, que es peor que no ponerlos.
+
+## 15. Vídeos que no hablan
 
 El análisis de la sección anterior solo lee texto, y hay vídeos que no lo tienen. Sobre una
 recopilación de comedia física de 8:39, Whisper detectó "coreano" con un 47 % de confianza y
@@ -811,7 +877,7 @@ fallido. Se guardan los mejores bloques como candidatos `SIGNAL` sin puntuar, el
 pasa a `NEEDS_REVIEW` y el vídeo original se conserva pase lo que pase con
 `KEEP_SOURCE_VIDEO`. El editor manual hace el resto.
 
-## 15. Editor manual
+## 16. Editor manual
 
 `/projects/{id}` abre el vídeo original con la línea de tiempo de señales debajo, en cinco
 carriles sobre el mismo eje: volumen, movimiento, cortes, tramos propuestos y clips ya
@@ -830,7 +896,7 @@ el modelo, no una regla para la persona que está mirando el vídeo. Y un reproc
 sustituye lo que produjo la máquina (`AI` y `SIGNAL`) pero nunca borra un candidato
 `MANUAL`.
 
-## 16. Almacenamiento
+## 17. Almacenamiento
 
 ```
 storage/projects/{project_id}/
@@ -885,7 +951,7 @@ que arrancas: uvicorn, celery, pytest y alembic se lanzan desde sitios distintos
 En base de datos se guardan **rutas relativas** a `STORAGE_PATH`, de modo que mover la carpeta o
 migrar a S3/R2 no invalida los registros existentes.
 
-## 17. Migraciones
+## 18. Migraciones
 
 ```powershell
 cd apps\backend
@@ -896,7 +962,7 @@ cd apps\backend
 
 Revisa siempre el fichero generado antes de aplicarlo.
 
-## 18. Hoja de ruta
+## 19. Hoja de ruta
 
 - [x] **FASE 1** — infraestructura, API, BD, worker, frontend
 - [x] **FASE 2** — descarga con yt-dlp y creación de proyectos
@@ -916,3 +982,4 @@ Revisa siempre el fichero generado antes de aplicarlo.
 - [x] **FASE 16** — títulos en inglés, palabras clave, metadatos de publicación
 - [x] **FASE 17** — ingesta: búsqueda en YouTube y canales vigilados
 - [x] **FASE 18** — publicación en YouTube y lectura de vistas reales
+- [x] **FASE 19** — EditPlan y eliminación del tiempo muerto

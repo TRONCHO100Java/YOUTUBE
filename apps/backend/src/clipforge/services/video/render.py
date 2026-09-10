@@ -7,6 +7,7 @@ de tiempo y una generación más de pérdida de calidad.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,6 +44,7 @@ def render_vertical_clip(
     *,
     start: float,
     end: float,
+    beats: Sequence[tuple[float, float]] | None = None,
     subtitles: Path | None = None,
     crop: CropFilter | None = None,
     encoder: EncoderProfile | None = None,
@@ -50,13 +52,17 @@ def render_vertical_clip(
     """Extrae `[start, end)` del original y lo deja en vertical 9:16.
 
     Args:
+        beats: tramos `(inicio, fin)` del original que se conservan, en
+            tiempos absolutos. Con None —o con uno solo— el clip es el
+            rango continuo de siempre y se usa el camino de siempre.
         subtitles: `.ass` a quemar. Si es None, el clip sale sin subtítulos.
         crop: ventana o plan de recorte. Si es None, se centra.
 
     Raises:
         ExternalToolError: si el rango es inválido o ffmpeg falla.
     """
-    duration = end - start
+    cuts = [beat for beat in (beats or []) if beat[1] > beat[0]]
+    duration = sum(b - a for a, b in cuts) if len(cuts) > 1 else end - start
     if duration <= 0:
         raise ExternalToolError(
             f"Rango de clip inválido: {start:.2f}-{end:.2f}",
@@ -87,6 +93,14 @@ def render_vertical_clip(
 
     audio_filters = build_audio_filters(duration)
 
+    # Con más de un tramo hay que montar, y montar no cabe en `-vf`: hace
+    # falta un filtergraph que recorte cada trozo y los concatene. Sigue
+    # siendo UNA pasada de ffmpeg; lo que cambia es la forma del grafo.
+    graph = _concat_graph(cuts, start, filters, audio_filters) if len(cuts) > 1 else None
+    # -t abarca hasta el final del último tramo: dentro del grafo se tira lo
+    # que sobra, pero ffmpeg tiene que haber decodificado hasta ahí.
+    decode_span = (cuts[-1][1] - start) if len(cuts) > 1 else duration
+
     command = [
         settings.ffmpeg_path,
         "-hide_banner",
@@ -98,12 +112,18 @@ def render_vertical_clip(
         "-ss",
         f"{start:.3f}",
         "-t",
-        f"{duration:.3f}",
+        f"{decode_span:.3f}",
         "-i",
         str(source),
-        "-vf",
-        ",".join(filters),
-        *(["-af", ",".join(audio_filters)] if audio_filters else []),
+        *(
+            ["-filter_complex", graph, "-map", "[v]", "-map", "[a]"]
+            if graph is not None
+            else [
+                "-vf",
+                ",".join(filters),
+                *(["-af", ",".join(audio_filters)] if audio_filters else []),
+            ]
+        ),
         *profile.args,
         "-c:a",
         "aac",
@@ -138,6 +158,7 @@ def render_vertical_clip(
         encoder=profile.name,
         resolution=f"{result.width}x{result.height}",
         duration=round(result.duration, 2),
+        beats=max(1, len(cuts)),
         size_mb=round(destination.stat().st_size / 1_048_576, 1),
         subtitles=subtitles is not None,
         audio=",".join(audio_filters) or "sin tratar",
@@ -152,6 +173,44 @@ def render_vertical_clip(
         encoder=profile.name,
         has_burned_subtitles=subtitles is not None,
     )
+
+
+def _concat_graph(
+    cuts: Sequence[tuple[float, float]],
+    seek: float,
+    video_filters: Sequence[str],
+    audio_filters: Sequence[str],
+) -> str:
+    """Filtergraph que recorta cada tramo, los concatena y monta el clip.
+
+    Los tiempos van **relativos al punto de búsqueda**: con `-ss` antes de
+    `-i`, ffmpeg reescribe las marcas de tiempo para que empiecen en cero, así
+    que usar los absolutos del original cortaría en el sitio equivocado.
+
+    El recorte, el escalado y los subtítulos se aplican DESPUÉS de concatenar
+    y no tramo a tramo: son los mismos para todo el clip, y hacerlo antes
+    multiplicaría el trabajo por el número de tramos sin cambiar el resultado.
+    """
+    parts: list[str] = []
+    labels: list[str] = []
+
+    for index, (cut_start, cut_end) in enumerate(cuts):
+        begin = max(0.0, cut_start - seek)
+        finish = max(begin, cut_end - seek)
+        # setpts/asetpts a cero: cada trozo tiene que empezar en su propio
+        # origen o `concat` los apila conservando los huecos que acabamos de
+        # quitar, que es justo lo contrario de lo que se busca.
+        parts.append(f"[0:v]trim=start={begin:.3f}:end={finish:.3f},setpts=PTS-STARTPTS[v{index}]")
+        parts.append(
+            f"[0:a]atrim=start={begin:.3f}:end={finish:.3f},asetpts=PTS-STARTPTS[a{index}]"
+        )
+        labels.append(f"[v{index}][a{index}]")
+
+    parts.append(f"{''.join(labels)}concat=n={len(cuts)}:v=1:a=1[vcat][acat]")
+    parts.append(f"[vcat]{','.join(video_filters)}[v]")
+    parts.append(f"[acat]{','.join(audio_filters)}[a]" if audio_filters else "[acat]anull[a]")
+
+    return ";".join(parts)
 
 
 def build_audio_filters(duration: float) -> list[str]:

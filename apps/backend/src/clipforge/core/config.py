@@ -169,6 +169,24 @@ class Settings(BaseSettings):
     #: Súbelo solo si usas un modelo grande, donde agrupar sale más barato.
     vision_blocks_per_request: int = 1
 
+    # ---------------------------------------------------------------- montaje
+    #: Quitar del clip el tiempo muerto: los huecos entre palabras que Whisper
+    #: ya tiene medidos. Es la transformacion con mejor relacion
+    #: esfuerzo/retencion sobre metraje ajeno, y la unica que ademas acorta.
+    smart_trimming: bool = True
+    #: Hueco minimo entre palabras para considerarlo tiempo muerto. Por debajo
+    #: de medio segundo casi todo son pausas naturales del habla.
+    trim_min_gap_seconds: float = 0.5
+    #: Margen que se deja a cada lado del corte, para no comerse la consonante
+    #: inicial ni la respiracion final.
+    trim_padding_seconds: float = 0.12
+    #: Duracion minima de un tramo tras cortar. Una sucesion de trozos de tres
+    #: decimas no es ritmo, es un tartamudeo.
+    trim_min_beat_seconds: float = 0.4
+    #: Tope de lo que se puede quitar. Si un clip es medio silencio, el
+    #: problema es la seleccion del momento y no el montaje.
+    trim_max_removed_ratio: float = 0.35
+
     # ------------------------------------------------------------ publicacion
     #: Credenciales OAuth de un proyecto de Google Cloud con la API de datos de
     #: YouTube activada, tipo "aplicacion de escritorio". Son secretas: fuera

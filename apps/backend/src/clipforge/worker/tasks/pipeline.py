@@ -64,6 +64,7 @@ from clipforge.services.ai import (
 from clipforge.services.ai.chunking import to_analysis_segments
 from clipforge.services.download.base import VideoDownloader
 from clipforge.services.download.ytdlp import YtDlpDownloader
+from clipforge.services.edit import Word, words_from_segments
 from clipforge.services.export import ClipExport, SourceCredit, export_project
 from clipforge.services.render_clip import ClipRenderPlan, RenderSetup, build_setup, render_clip
 from clipforge.services.signals import SignalTimeline, build_timeline
@@ -593,7 +594,8 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
         if not project.source_video_path:
             raise ClipForgeError("El proyecto no tiene vídeo de origen que recortar")
         video_relative = project.source_video_path
-        burn = rules_for(project.content_profile or ContentProfile.TALKING).burn_subtitles
+        rules = rules_for(project.content_profile or ContentProfile.TALKING)
+        burn = rules.burn_subtitles
 
         candidates = list(
             session.execute(
@@ -615,6 +617,7 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
             for position, candidate in enumerate(candidates, start=1)
         ]
         segments = subtitle_segments(session, project_id)
+        words = transcript_words(session, project_id)
         project.status = ProjectStatus.GENERATING_CLIPS
 
     if not plans:
@@ -626,6 +629,8 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
         segments,
         burn_subtitles=burn,
         sample_at=plans[0].start,
+        words=words,
+        trim_silences=rules.trim_silences,
     )
     log.info("pipeline.render_started", clips=len(plans), encoder=setup.encoder.name)
 
@@ -737,13 +742,35 @@ def render_and_store(plan: ClipRenderPlan, setup: RenderSetup) -> None:
 
 def subtitle_segments(session: Session, project_id: uuid.UUID) -> list[SourceSegment]:
     """Segmentos de la transcripción en tiempos del vídeo original."""
-    rows = session.execute(
-        select(TranscriptSegment)
-        .join(Transcript, Transcript.id == TranscriptSegment.transcript_id)
-        .where(Transcript.project_id == project_id)
-        .order_by(TranscriptSegment.index)
-    ).scalars()
-    return [SourceSegment(start=row.start_time, end=row.end_time, text=row.text) for row in rows]
+    return [
+        SourceSegment(start=row.start_time, end=row.end_time, text=row.text)
+        for row in _transcript_rows(session, project_id)
+    ]
+
+
+def transcript_words(session: Session, project_id: uuid.UUID) -> list[Word]:
+    """Tiempos por palabra de toda la transcripción.
+
+    Whisper los mide y los guarda desde la fase 3, y hasta ahora no los
+    leía nadie. Son los que dicen dónde hay silencio de verdad, sin volver
+    a tocar el audio.
+    """
+    words: list[Word] = []
+    for row in _transcript_rows(session, project_id):
+        if row.words:
+            words.extend(words_from_segments(row.words))
+    return words
+
+
+def _transcript_rows(session: Session, project_id: uuid.UUID) -> list[TranscriptSegment]:
+    return list(
+        session.execute(
+            select(TranscriptSegment)
+            .join(Transcript, Transcript.id == TranscriptSegment.transcript_id)
+            .where(Transcript.project_id == project_id)
+            .order_by(TranscriptSegment.index)
+        ).scalars()
+    )
 
 
 def update_candidate(candidate_id: uuid.UUID, **fields: Any) -> None:

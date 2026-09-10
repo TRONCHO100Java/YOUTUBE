@@ -55,6 +55,11 @@ class ProfileRules:
     guidance: tuple[str, ...]
     #: Los subtítulos incrustados solo tienen sentido si hay algo que subtitular.
     burn_subtitles: bool
+    #: Quitar los silencios entre palabras. En un vídeo hablado es puro
+    #: tiempo muerto; en uno visual, el silencio ES el chiste —la pausa
+    #: antes de la caída, el segundo de desconcierto después— y cortarlo
+    #: por "no aportar" es justo lo que arruina el tiempo cómico.
+    trim_silences: bool = True
 
     @property
     def total_maximum(self) -> int:
@@ -104,6 +109,7 @@ def rules_for(profile: ContentProfile) -> ProfileRules:
                 "Prefiere momentos que se entiendan con el sonido quitado.",
             ),
             burn_subtitles=False,
+            trim_silences=False,
         )
 
     return ProfileRules(
