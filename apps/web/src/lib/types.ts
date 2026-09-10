@@ -235,6 +235,10 @@ export interface RoutedClip {
   channel_id: string | null;
   channel_name: string | null;
   youtube_video_id: string | null;
+  /** Marcado como subido, por donde sea. Studio no da id de YouTube. */
+  published_at: string | null;
+  /** Si el fichero se borró para dejar sitio. */
+  deleted_at: string | null;
 }
 
 /** Lo que devuelve un endpoint que encola trabajo. */

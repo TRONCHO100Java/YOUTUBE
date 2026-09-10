@@ -28,6 +28,7 @@ celery_app = Celery(
         "clipforge.worker.tasks.render",
         "clipforge.worker.tasks.retitle",
         "clipforge.worker.tasks.retag",
+        "clipforge.worker.tasks.maintenance",
         "clipforge.worker.tasks.ingest",
         "clipforge.worker.tasks.publish",
     ],
@@ -64,6 +65,20 @@ celery_app.conf.update(
         # Releer las vistas de lo publicado. Es lo unico que puede decir si
         # la rubrica acierta; una vez al dia basta, porque un Short no cambia
         # de suerte cada hora.
+        # Recuperar sitio. Una vez al dia basta: lo que se libera son
+        # originales de proyectos ya terminados, que no crecen solos.
+        # Reintentar lo que fallo por causas pasajeras. Cada hora: si el
+        # motivo era de red, para entonces suele haberse arreglado solo.
+        "retry-failed-projects": {
+            "task": "clipforge.maintenance.retry_failed",
+            "schedule": timedelta(hours=1),
+            "options": {"expires": 3600},
+        },
+        "purge-source-videos": {
+            "task": "clipforge.maintenance.purge_sources",
+            "schedule": timedelta(hours=24),
+            "options": {"expires": 3600 * 24},
+        },
         "refresh-published-stats": {
             "task": "clipforge.publish.refresh_stats",
             "schedule": timedelta(hours=12),

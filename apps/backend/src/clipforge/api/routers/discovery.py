@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query, status
 from sqlalchemy import select
@@ -132,7 +132,7 @@ async def create_batch(payload: BatchCreate, session: DbSession) -> BatchResult:
 @router.get("/channels", response_model=list[ChannelRead], summary="Canales vigilados")
 async def list_channels(session: DbSession) -> list[ChannelRead]:
     rows = await session.execute(select(WatchedChannel).order_by(WatchedChannel.created_at))
-    return [ChannelRead.model_validate(row, from_attributes=True) for row in rows.scalars()]
+    return [_channel_read(row) for row in rows.scalars()]
 
 
 @router.post(
@@ -174,7 +174,7 @@ async def add_channel(payload: ChannelCreate, session: DbSession) -> ChannelRead
     await session.refresh(channel)
 
     logger.info("channel.watched", channel_id=ref.channel_id, title=ref.title)
-    return ChannelRead.model_validate(channel, from_attributes=True)
+    return _channel_read(channel)
 
 
 @router.patch("/channels/{channel_uuid}", response_model=ChannelRead, summary="Editar un canal")
@@ -201,7 +201,7 @@ async def update_channel(
 
     await session.commit()
     await session.refresh(channel)
-    return ChannelRead.model_validate(channel, from_attributes=True)
+    return _channel_read(channel)
 
 
 @router.delete(
@@ -228,6 +228,21 @@ async def check_channel(channel_uuid: uuid.UUID, session: DbSession) -> dict[str
 
 
 # ------------------------------------------------------------------ privado
+def _channel_read(channel: WatchedChannel) -> ChannelRead:
+    """Vista del canal, con cuanto lleva sin publicar.
+
+    El dato se calcula aqui y no se guarda: se deduce de la marca de agua,
+    y una columna mas seria un dato que puede quedarse viejo sin que nadie
+    lo note.
+    """
+    silent: int | None = None
+    if channel.last_video_published_at is not None:
+        silent = (datetime.now(UTC) - channel.last_video_published_at).days
+
+    read = ChannelRead.model_validate(channel, from_attributes=True)
+    return read.model_copy(update={"days_since_last_video": silent})
+
+
 async def _require_channel(channel_uuid: uuid.UUID, session: DbSession) -> WatchedChannel:
     channel = await session.get(WatchedChannel, channel_uuid)
     if channel is None:

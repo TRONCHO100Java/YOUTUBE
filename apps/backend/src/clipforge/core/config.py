@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # volver a descargarlo es lento y puede fallar (vídeo retirado, límites
     # de YouTube). En local el disco sale más barato que el ancho de banda.
     keep_source_video: bool = True
+    #: Dias que se conserva el video original de un proyecto terminado antes
+    #: de borrarlo. Es lo que mas ocupa con diferencia y no se vuelve a usar:
+    #: si hace falta, la descarga lo baja otra vez sola. -1 lo conserva para
+    #: siempre; 0 lo borra en cuanto el proyecto termina.
+    source_retention_days: int = 7
     keep_audio: bool = False
     keep_temp_files: bool = False
     # Vista derivada de los clips con nombres legibles, para subirlos a mano.

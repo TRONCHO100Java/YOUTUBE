@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from clipforge.api.deps import ClipRepo
 from clipforge.api.schemas.clip import GeneratedClipRead
@@ -16,8 +17,105 @@ from clipforge.core.logging import get_logger
 from clipforge.core.storage import absolute_from_storage, sanitize_filename
 from clipforge.db.models import GeneratedClip
 
+#: Tope por tanda. Mas que esto no es una tanda, es un borrado masivo
+#: hecho sin mirar.
+MAX_BULK = 100
+
 router = APIRouter(prefix="/clips", tags=["clips"])
 logger = get_logger(__name__)
+
+
+class BulkClips(BaseModel):
+    """Varios clips a la vez."""
+
+    clip_ids: list[uuid.UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_BULK,
+        description="Clips sobre los que actuar",
+    )
+
+
+class BulkResult(BaseModel):
+    """Cuantos se han tocado y cuantos no estaban."""
+
+    #: Los que han cambiado de verdad. Un clip ya subido que se vuelve a
+    #: marcar no cuenta: no ha pasado nada con el.
+    changed: int
+    #: Ids que ya no existen. No es un error —se pueden haber borrado entre
+    #: que se pinto la lista y se pulso el boton— pero hay que decirlo.
+    missing: int
+
+
+@router.post(
+    "/bulk/uploaded",
+    response_model=BulkResult,
+    summary="Marcar varios clips como subidos",
+)
+async def bulk_uploaded(payload: BulkClips, repo: ClipRepo) -> BulkResult:
+    """Marca de golpe todo lo que se acaba de subir.
+
+    Subir diez Shorts a Studio y volver a marcarlos de uno en uno es donde
+    se pierde la tarde. Se hace en una transaccion: o se marcan todos o no
+    se marca ninguno, para que no quede media tanda a medias si algo falla.
+    """
+    changed = 0
+    missing = 0
+    now = datetime.now(UTC)
+
+    for clip_id in payload.clip_ids:
+        clip = await repo.get(clip_id)
+        if clip is None:
+            missing += 1
+            continue
+        if clip.published_at is not None:
+            continue
+        clip.published_at = now
+        if clip.privacy_status is None:
+            clip.privacy_status = "manual"
+        changed += 1
+
+    await repo.session.commit()
+    logger.info("clips.bulk_uploaded", changed=changed, missing=missing)
+    return BulkResult(changed=changed, missing=missing)
+
+
+@router.post(
+    "/bulk/delete-files",
+    response_model=BulkResult,
+    summary="Borrar el fichero de varios clips",
+)
+async def bulk_delete_files(payload: BulkClips, repo: ClipRepo) -> BulkResult:
+    """Libera el sitio de varios clips ya subidos.
+
+    Solo toca los que ya estan marcados como subidos. Borrar en bloque el
+    unico sitio donde existe un video que todavia no ha salido seria
+    exactamente el error que no se puede deshacer.
+    """
+    changed = 0
+    missing = 0
+
+    for clip_id in payload.clip_ids:
+        clip = await repo.get(clip_id)
+        if clip is None:
+            missing += 1
+            continue
+        if clip.published_at is None or clip.deleted_at is not None:
+            continue
+
+        for relative in (clip.file_path, clip.subtitle_path):
+            if not relative:
+                continue
+            try:
+                absolute_from_storage(relative).unlink(missing_ok=True)
+            except ValueError:
+                continue
+        clip.deleted_at = datetime.now(UTC)
+        changed += 1
+
+    await repo.session.commit()
+    logger.info("clips.bulk_deleted", changed=changed, missing=missing)
+    return BulkResult(changed=changed, missing=missing)
 
 
 @router.get("/{clip_id}", response_model=GeneratedClipRead, summary="Detalle de un clip")

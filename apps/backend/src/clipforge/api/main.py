@@ -23,6 +23,7 @@ from clipforge.api.routers import (
     health,
     projects,
     publish_channels,
+    storage,
     tasks,
 )
 from clipforge.core.config import settings
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(tasks.router, prefix=API_PREFIX)
     app.include_router(discovery.router, prefix=API_PREFIX)
     app.include_router(publish_channels.router, prefix=API_PREFIX)
+    app.include_router(storage.router, prefix=API_PREFIX)
     return app
 
 

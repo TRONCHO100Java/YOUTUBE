@@ -122,6 +122,10 @@ class ChannelRead(BaseModel):
     #: que lleva días fallando se ven igual sin esto.
     last_error: str | None
     projects_created: int
+    #: Dias desde el ultimo video del canal. Es lo que distingue un canal
+    #: que da caudal de uno que lleva medio ano callado y solo parece que
+    #: trabaja porque se revisa cada media hora.
+    days_since_last_video: int | None = None
     created_at: datetime
 
 

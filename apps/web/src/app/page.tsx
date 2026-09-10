@@ -1,5 +1,6 @@
 import { ProjectsPanel } from "@/components/ProjectsPanel";
 import { SystemStatus } from "@/components/SystemStatus";
+import { TodayBoard } from "@/components/TodayBoard";
 
 export default function HomePage() {
   return (
@@ -15,7 +16,14 @@ export default function HomePage() {
         </p>
       </header>
 
+      {/* Lo primero es lo que se hace a diario: subir lo que ya está listo.
+          La configuración —buscador, canales, proyectos— va debajo, porque
+          se toca una vez y luego casi nunca. */}
       <div className="mt-10">
+        <TodayBoard />
+      </div>
+
+      <div className="mt-12">
         <ProjectsPanel />
       </div>
 

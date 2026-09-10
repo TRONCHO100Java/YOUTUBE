@@ -275,9 +275,7 @@ async def retag(project_id: uuid.UUID, repo: ProjectRepo) -> TaskRef:
     project = await _require(project_id, repo)
 
     if ProjectStatus(project.status).is_running:
-        raise ConflictError(
-            f"El proyecto está en curso ({project.status}); espera a que termine"
-        )
+        raise ConflictError(f"El proyecto está en curso ({project.status}); espera a que termine")
 
     task = retag_project.delay(str(project.id))
     logger.info("project.retag_requested", project_id=str(project.id), task_id=task.id)
@@ -331,7 +329,14 @@ async def get_source_video(project_id: uuid.UUID, repo: ProjectRepo) -> FileResp
     """
     project = await _require(project_id, repo)
     if not project.source_video_path:
-        raise NotFoundError(f"El proyecto {project_id} no tiene vídeo descargado")
+        # Sin ruta y con ruta rota significan lo mismo para quien mira: el
+        # original no está. Lo habitual ya no es que no se haya descargado,
+        # sino que se haya borrado para recuperar sitio, así que el mensaje
+        # dice qué hacer en vez de constatar la ausencia.
+        raise NotFoundError(
+            "El vídeo original no está en disco. Vuelve a procesar el proyecto "
+            "para descargarlo otra vez."
+        )
 
     try:
         path = absolute_from_storage(project.source_video_path)

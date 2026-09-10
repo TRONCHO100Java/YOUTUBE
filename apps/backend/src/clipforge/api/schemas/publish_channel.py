@@ -120,3 +120,8 @@ class RoutedClip(BaseModel):
     channel_name: str | None
     #: Si ya está en YouTube, para no subirlo dos veces.
     youtube_video_id: str | None
+    #: Marcado como subido, se haya subido por donde se haya subido. No es
+    #: lo mismo que tener id de YouTube: subir a mano por Studio no lo da.
+    published_at: datetime | None
+    #: Si el fichero se borró para dejar sitio. La ficha sigue, el vídeo no.
+    deleted_at: datetime | None

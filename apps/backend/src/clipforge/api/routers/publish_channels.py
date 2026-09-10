@@ -146,7 +146,12 @@ async def routing(
         .limit(limit)
     )
     if pending:
-        query = query.where(GeneratedClip.youtube_video_id.is_(None))
+        # Pendiente = sin subir Y con fichero. Filtrar solo por id de
+        # YouTube dejaba dentro lo subido a mano por Studio, que es la via
+        # normal y no da id, y tambien lo ya borrado para dejar sitio.
+        query = query.where(GeneratedClip.published_at.is_(None)).where(
+            GeneratedClip.deleted_at.is_(None)
+        )
 
     routed: list[RoutedClip] = []
     for clip in (await session.execute(query)).scalars():
@@ -166,6 +171,8 @@ async def routing(
                 channel_id=match.channel.id if match else None,  # type: ignore[attr-defined]
                 channel_name=match.channel.name if match else None,
                 youtube_video_id=clip.youtube_video_id,
+                published_at=clip.published_at,
+                deleted_at=clip.deleted_at,
             )
         )
 
