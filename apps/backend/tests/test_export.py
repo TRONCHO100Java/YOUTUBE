@@ -6,6 +6,7 @@ para poder abrir la carpeta y subir los clips sin adivinar cual es cual.
 
 from __future__ import annotations
 
+import csv
 import os
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -14,8 +15,10 @@ import pytest
 
 from clipforge.services import export as export_module
 from clipforge.services.export import (
+    INDEX_NAME,
     MARKER_NAME,
     ClipExport,
+    SourceCredit,
     export_filename,
     export_project,
 )
@@ -219,3 +222,122 @@ def test_relative_paths_are_anchored_to_the_repo() -> None:
 
     settings = Settings(export_path=Path("storage/export"))
     assert settings.export_path == (REPO_ROOT / "storage" / "export").resolve()
+
+
+# --------------------------------------------------- ficheros para publicar
+CREDIT = SourceCredit(
+    title="Must Watch New Non stop Comedy Video 2021",
+    author="Busy Fun Ltd",
+    url="https://www.youtube.com/watch?v=MsyQgyJbjns",
+)
+
+
+def _publishable(tmp_path: Path, rank: int, title: str) -> ClipExport:
+    """Un clip con todo lo que hace falta para subirlo."""
+    clip = _clip(tmp_path, rank, title)
+    return ClipExport(
+        rank=clip.rank,
+        title=clip.title,
+        video=clip.video,
+        subtitles=clip.subtitles,
+        description="A farmer loses his footing and ends up in the water.",
+        hashtags=("shorts", "farmfails"),
+        start=398.0,
+        end=422.0,
+    )
+
+
+def test_each_clip_leaves_its_text_next_to_the_video(tmp_path: Path) -> None:
+    folder = export_project(
+        PROJECT, "Comedy", [_publishable(tmp_path, 1, "Farmer slips in mud")], CREDIT
+    )
+    assert folder is not None
+
+    notes = (folder / "01 - Farmer slips in mud.txt").read_text(encoding="utf-8")
+    assert notes.startswith("Farmer slips in mud")
+    assert "A farmer loses his footing" in notes
+    assert "#shorts #farmfails" in notes
+
+
+def test_the_notes_credit_the_channel_the_video_came_from(tmp_path: Path) -> None:
+    """Sin crédito, subir clips ajenos es un reupload. Con él, no."""
+    folder = export_project(
+        PROJECT, "Comedy", [_publishable(tmp_path, 1, "Farmer slips in mud")], CREDIT
+    )
+    assert folder is not None
+
+    notes = (folder / "01 - Farmer slips in mud.txt").read_text(encoding="utf-8")
+    assert "Busy Fun Ltd" in notes
+    assert "https://www.youtube.com/watch?v=MsyQgyJbjns" in notes
+
+
+def test_the_notes_say_where_in_the_original_the_clip_came_from(tmp_path: Path) -> None:
+    folder = export_project(
+        PROJECT, "Comedy", [_publishable(tmp_path, 1, "Farmer slips in mud")], CREDIT
+    )
+    assert folder is not None
+
+    notes = (folder / "01 - Farmer slips in mud.txt").read_text(encoding="utf-8")
+    assert "6:38 - 7:02" in notes
+
+
+def test_a_clip_without_metadata_still_gets_its_note(tmp_path: Path) -> None:
+    """Un candidato recortado a mano no tiene descripción y no pasa nada."""
+    folder = export_project(PROJECT, "Comedy", [_clip(tmp_path, 1, "Recorte a mano")])
+    assert folder is not None
+
+    notes = (folder / "01 - Recorte a mano.txt").read_text(encoding="utf-8")
+    assert notes.startswith("Recorte a mano")
+
+
+def test_the_folder_carries_an_index_of_every_clip(tmp_path: Path) -> None:
+    folder = export_project(
+        PROJECT,
+        "Comedy",
+        [_publishable(tmp_path, 2, "Color party"), _publishable(tmp_path, 1, "Farmer slips")],
+        CREDIT,
+    )
+    assert folder is not None
+
+    rows = list(
+        csv.reader((folder / INDEX_NAME).read_text(encoding="utf-8").splitlines(), delimiter=";")
+    )
+    assert rows[0][0] == "orden"
+    # Ordenado por ranking, no por el orden en que llegaron.
+    assert [row[1] for row in rows[1:]] == ["Farmer slips", "Color party"]
+
+
+def test_the_index_points_at_the_files_that_are_really_there(tmp_path: Path) -> None:
+    folder = export_project(PROJECT, "Comedy", [_publishable(tmp_path, 1, "Farmer slips")], CREDIT)
+    assert folder is not None
+
+    rows = list(
+        csv.reader((folder / INDEX_NAME).read_text(encoding="utf-8").splitlines(), delimiter=";")
+    )
+    assert (folder / rows[1][4]).is_file()
+
+
+def test_the_index_description_already_carries_the_credit(tmp_path: Path) -> None:
+    """El CSV se abre en otro programa: volver aquí a por el crédito no vale."""
+    folder = export_project(PROJECT, "Comedy", [_publishable(tmp_path, 1, "Farmer slips")], CREDIT)
+    assert folder is not None
+
+    rows = list(
+        csv.reader((folder / INDEX_NAME).read_text(encoding="utf-8").splitlines(), delimiter=";")
+    )
+    assert "Busy Fun Ltd" in rows[1][2]
+
+
+def test_an_empty_export_leaves_no_index(tmp_path: Path) -> None:
+    assert export_project(PROJECT, "Comedy", []) is None
+
+
+def test_a_video_of_unknown_origin_gets_notes_without_credit(tmp_path: Path) -> None:
+    folder = export_project(
+        PROJECT, "Comedy", [_publishable(tmp_path, 1, "Farmer slips")], SourceCredit()
+    )
+    assert folder is not None
+
+    notes = (folder / "01 - Farmer slips.txt").read_text(encoding="utf-8")
+    assert "Del video original" not in notes
+    assert notes.startswith("Farmer slips")

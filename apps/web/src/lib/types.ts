@@ -87,7 +87,13 @@ export interface ClipCandidate {
   end_segment_index: number | null;
   duration: number;
   title: string;
+  /** Los otros títulos que propuso el redactor: cambiar es un clic, no otra llamada. */
+  title_variants: string[];
   hook: string | null;
+  /** Descripción para la caja de YouTube, sin el crédito al canal. */
+  description: string | null;
+  /** Etiquetas sin almohadilla; la primera es siempre "shorts". */
+  hashtags: string[];
   reason: string | null;
   transcript_excerpt: string | null;
   error_message: string | null;
@@ -108,6 +114,10 @@ export interface GeneratedClip {
   project_id: string;
   title: string;
   hook: string | null;
+  /** Descripción para la caja de YouTube, sin el crédito al canal. */
+  description: string | null;
+  /** Etiquetas sin almohadilla; la primera es siempre "shorts". */
+  hashtags: string[];
   reason: string | null;
   score: number;
   rank: number | null;

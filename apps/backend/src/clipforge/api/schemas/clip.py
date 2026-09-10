@@ -23,6 +23,10 @@ class GeneratedClipRead(BaseModel):
 
     title: str
     hook: str | None
+    #: Lo que hace falta para rellenar la caja de YouTube al subirlo, sin
+    #: tener que abrir el editor ni pedir el candidato aparte.
+    description: str | None
+    hashtags: list[str]
     reason: str | None
     score: float
     rank: int | None
@@ -47,6 +51,8 @@ class GeneratedClipRead(BaseModel):
             project_id=candidate.project_id,
             title=candidate.title,
             hook=candidate.hook,
+            description=candidate.description,
+            hashtags=list(candidate.hashtags or []),
             reason=candidate.reason,
             score=candidate.score,
             rank=candidate.rank,

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type ReactNode, useEffect, useState } from "react";
 
+import { PublishingNotes } from "@/components/PublishingNotes";
 import { clipSubtitlesUrl, clipVideoUrl, listClips } from "@/lib/api";
 import type { GeneratedClip } from "@/lib/types";
 
@@ -113,6 +114,12 @@ export function ClipList({ projectId, emptyAction }: Props) {
                 {clip.hook}
               </p>
             )}
+
+            <PublishingNotes
+              title={clip.title}
+              description={clip.description}
+              hashtags={clip.hashtags}
+            />
 
             <p className="mt-2 text-[11px] tabular-nums text-zinc-600">
               {clip.width}×{clip.height} · {Math.round(clip.duration ?? 0)}s ·{" "}

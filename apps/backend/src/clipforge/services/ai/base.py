@@ -113,6 +113,16 @@ class ClipSuggestion:
     #: ceros haría creer que un modelo lo ha valorado y le ha dado cero.
     scores: ClipScores | None
     transcript_excerpt: str | None = None
+    #: Las otras variantes de título que propuso el redactor, ya validadas.
+    #: Se guardan para poder cambiar de título con un clic desde el editor,
+    #: sin volver a llamar a ningún modelo: la llamada ya se pagó.
+    title_variants: tuple[str, ...] = ()
+    #: Descripción para la caja de YouTube. Solo la parte que describe el
+    #: clip: el crédito al canal original se compone al exportar, porque lo
+    #: sabe el sistema y no el modelo.
+    description: str | None = None
+    #: Etiquetas, sin la almohadilla. Siempre incluyen "shorts".
+    hashtags: tuple[str, ...] = ()
     source: CandidateSource = CandidateSource.AI
     #: Puntuación directa, para los candidatos que no tienen desglose.
     signal_score: float | None = None

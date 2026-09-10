@@ -12,6 +12,8 @@ sin perder nada, y regenerarla es idempotente.
 
 from __future__ import annotations
 
+import csv
+import io
 import os
 import re
 import shutil
@@ -28,6 +30,14 @@ logger = get_logger(__name__)
 #: Marca que dice de que proyecto es la carpeta. Sin ella, dos videos con el
 #: mismo titulo mezclarian sus clips en silencio.
 MARKER_NAME = ".clipforge-project"
+
+#: Indice de la carpeta, con los datos de todos los clips en una tabla.
+INDEX_NAME = "youtube.csv"
+
+#: Salto de linea explicito: estos ficheros se escriben en Windows pero se
+#: leen en cualquier sitio, y un CRLF dentro de un campo CSV rompe mas de un
+#: lector.
+NEWLINE = "\n"
 
 #: Prohibidos en Windows (NTFS). En POSIX solo "/" lo esta, pero un nombre que
 #: solo funcione en un sistema no sirve: estos ficheros se copian y se mueven.
@@ -81,12 +91,41 @@ def export_filename(text: str, *, fallback: str = "clip") -> str:
 
 @dataclass(frozen=True, slots=True)
 class ClipExport:
-    """Un clip renderizado, con lo que hace falta para nombrarlo."""
+    """Un clip renderizado, con lo que hace falta para nombrarlo y subirlo."""
 
     rank: int
     title: str
     video: Path
     subtitles: Path | None = None
+    description: str | None = None
+    hashtags: tuple[str, ...] = ()
+    start: float = 0.0
+    end: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class SourceCredit:
+    """De donde salio el video, para acreditarlo en la descripcion.
+
+    Lo compone el sistema y no el modelo por dos razones: el modelo no
+    conoce la URL, y el credito es justo lo que separa un clip de un
+    reupload a ojos de YouTube. No es decoracion.
+    """
+
+    title: str | None = None
+    author: str | None = None
+    url: str | None = None
+
+    def lines(self) -> list[str]:
+        """Las lineas de credito, o ninguna si no se sabe de donde viene."""
+        if not (self.title or self.author or self.url):
+            return []
+
+        source = " - ".join(part for part in (self.title, self.author) if part)
+        lines = [f"Del video original: {source}" if source else "Video original:"]
+        if self.url:
+            lines.append(self.url)
+        return lines
 
 
 def export_root() -> Path:
@@ -98,6 +137,7 @@ def export_project(
     project_id: UUID,
     project_title: str | None,
     clips: list[ClipExport],
+    credit: SourceCredit | None = None,
 ) -> Path | None:
     """Deja los clips del proyecto en `export/{titulo}/` con nombres legibles.
 
@@ -123,10 +163,76 @@ def export_project(
         _link_or_copy(clip.video, folder / f"{stem}{clip.video.suffix}")
         if clip.subtitles is not None and clip.subtitles.is_file():
             _link_or_copy(clip.subtitles, folder / f"{stem}{clip.subtitles.suffix}")
+        # El .txt al lado del .mp4: al subir se abre uno y se copia del otro,
+        # sin volver a la aplicacion a buscar que decia este clip.
+        folder.joinpath(f"{stem}.txt").write_text(
+            clip_notes(clip, credit or SourceCredit()), encoding="utf-8"
+        )
         exported += 1
+
+    if exported:
+        folder.joinpath(INDEX_NAME).write_text(
+            clips_index(clips, credit or SourceCredit()), encoding="utf-8"
+        )
 
     logger.info("export.finished", folder=str(folder), clips=exported)
     return folder
+
+
+def clip_notes(clip: ClipExport, credit: SourceCredit) -> str:
+    """El texto que se copia al subir el clip: titulo, descripcion, etiquetas.
+
+    En bloques separados por lineas en blanco, en el mismo orden en que los
+    pide el formulario de YouTube, para poder ir copiando de arriba abajo.
+    """
+    hashtags = " ".join(f"#{tag}" for tag in clip.hashtags)
+    description = [clip.description] if clip.description else []
+    body = [*description, *credit.lines()]
+
+    blocks = [clip.title]
+    if body:
+        blocks.append(NEWLINE.join(body))
+    if hashtags:
+        blocks.append(hashtags)
+    blocks.append(f"Del original {_clock(clip.start)} - {_clock(clip.end)}")
+
+    return (NEWLINE * 2).join(blocks) + NEWLINE
+
+
+def clips_index(clips: list[ClipExport], credit: SourceCredit) -> str:
+    """Todos los clips de la carpeta en un CSV, para subirlos en tanda.
+
+    La descripcion viaja con su credito ya incorporado: el CSV se abre en
+    otro programa, y una descripcion a medias obligaria a volver aqui.
+    """
+    rows = [("orden", "titulo", "descripcion", "etiquetas", "fichero", "desde", "hasta")]
+    for clip in sorted(clips, key=lambda item: item.rank):
+        description = NEWLINE.join(
+            [*([clip.description] if clip.description else []), *credit.lines()]
+        )
+        rows.append(
+            (
+                str(clip.rank),
+                clip.title,
+                description,
+                " ".join(f"#{tag}" for tag in clip.hashtags),
+                f"{clip.rank:02d} - {export_filename(clip.title)}{clip.video.suffix}",
+                _clock(clip.start),
+                _clock(clip.end),
+            )
+        )
+
+    buffer = io.StringIO()
+    # Excel en espanol espera el punto y coma; con coma mete todo en una
+    # columna y el CSV deja de servir para lo unico que sirve.
+    csv.writer(buffer, delimiter=";", lineterminator=NEWLINE).writerows(rows)
+    return buffer.getvalue()
+
+
+def _clock(seconds: float) -> str:
+    """m:ss, que es como se leen los tiempos en el reproductor."""
+    total = round(seconds)
+    return f"{total // 60}:{total % 60:02d}"
 
 
 def _project_folder(project_id: UUID, project_title: str | None) -> Path:

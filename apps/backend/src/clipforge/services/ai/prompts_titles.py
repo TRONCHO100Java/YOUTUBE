@@ -24,10 +24,13 @@ un vídeo, con lo que pasa en cada uno, y escribes el título con el que se van 
 a publicar.
 
 No juzgas los clips ni cambias sus tiempos: eso ya está decidido. Tu único \
-trabajo es el texto."""
+trabajo es el texto que acompaña a cada uno: su título, su descripción y sus \
+etiquetas."""
 
 
-def build_titles_system_prompt(*, max_chars: int, variants: int, keywords: bool = False) -> str:
+def build_titles_system_prompt(
+    *, max_chars: int, variants: int, hashtags: int, keywords: bool = False
+) -> str:
     """Reglas de redacción de títulos.
 
     Se piden varias variantes por clip a propósito. Un título puede salir
@@ -55,6 +58,13 @@ def build_titles_system_prompt(*, max_chars: int, variants: int, keywords: bool 
         f"Escribe {variants} variantes por clip, con ángulos distintos: una que cite "
         "lo que se dice o se ve, otra en forma de pregunta, y otra que plantee lo "
         "que está en juego y su remate.",
+        "La descripción son dos o tres frases que cuentan qué se ve, para la "
+        "caja de YouTube. No repitas el título literalmente y no pongas enlaces "
+        "ni créditos: el crédito al canal original lo añade el sistema, que sí "
+        "sabe de dónde salió el vídeo.",
+        f"Escribe hasta {hashtags} etiquetas temáticas, sin almohadilla y sin "
+        "espacios (KaiCenat, AmongUs). Que nombren lo que sale en el clip. No "
+        "pongas la etiqueta shorts: esa la añade el sistema siempre.",
         "TODO en INGLÉS, sea cual sea el idioma del vídeo.",
     ]
     if keywords:
@@ -68,7 +78,8 @@ def build_titles_system_prompt(*, max_chars: int, variants: int, keywords: bool 
 REGLAS
 {numbered}
 
-Devuelve una entrada por clip, con el número de clip que se te ha dado."""
+Devuelve una entrada por clip —con el número de clip que se te ha dado— y, en
+cada una, las variantes de título, la descripción y las etiquetas."""
 
 
 def build_titles_user_prompt(clips: Sequence[TitleBrief], context: AnalysisContext) -> str:

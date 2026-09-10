@@ -51,7 +51,15 @@ class ClipCandidateRead(BaseModel):
     end_segment_index: int | None
 
     title: str
+    #: Los otros títulos que propuso el redactor. Cambiar a uno de ellos es
+    #: un PATCH, no otra llamada al modelo: ya están pagados y validados.
+    title_variants: list[str]
     hook: str | None
+    #: Descripción para la caja de YouTube, sin el crédito al canal: ese se
+    #: compone al exportar, donde se conoce la URL de origen.
+    description: str | None
+    #: Etiquetas sin almohadilla; la primera es siempre "shorts".
+    hashtags: list[str]
     reason: str | None
     transcript_excerpt: str | None
     error_message: str | None
@@ -103,7 +111,12 @@ class ClipCandidateRead(BaseModel):
             start_segment_index=candidate.start_segment_index,  # type: ignore[attr-defined]
             end_segment_index=candidate.end_segment_index,  # type: ignore[attr-defined]
             title=candidate.title,  # type: ignore[attr-defined]
+            # NULL y lista vacía son lo mismo para quien las pinta, y una
+            # lista siempre presente le ahorra al frontend un caso más.
+            title_variants=list(candidate.title_variants or []),  # type: ignore[attr-defined]
             hook=candidate.hook,  # type: ignore[attr-defined]
+            description=candidate.description,  # type: ignore[attr-defined]
+            hashtags=list(candidate.hashtags or []),  # type: ignore[attr-defined]
             reason=candidate.reason,  # type: ignore[attr-defined]
             transcript_excerpt=candidate.transcript_excerpt,  # type: ignore[attr-defined]
             error_message=candidate.error_message,  # type: ignore[attr-defined]

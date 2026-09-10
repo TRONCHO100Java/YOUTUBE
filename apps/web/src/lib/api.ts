@@ -123,6 +123,16 @@ export function updateProjectKeywords(
   });
 }
 
+/**
+ * Reescribe solo los títulos, sin volver a renderizar.
+ *
+ * El título no está dentro del MP4, así que esto cuesta segundos en vez de
+ * todo el pipeline. No toca el gancho, que sí va incrustado en los píxeles.
+ */
+export function retitleProject(id: string): Promise<ProjectDetail> {
+  return apiFetch<ProjectDetail>(`/api/projects/${id}/retitle`, { method: "POST" });
+}
+
 /** Reprocesa un proyecto terminado o fallido. */
 export function retryProject(id: string): Promise<ProjectDetail> {
   return apiFetch<ProjectDetail>(`/api/projects/${id}/retry`, { method: "POST" });

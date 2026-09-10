@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { ClipList } from "@/components/ClipList";
 import { RegenerateButton } from "@/components/RegenerateButton";
-import { retryProject } from "@/lib/api";
+import { retitleProject, retryProject } from "@/lib/api";
 import {
   isProjectRunning,
   PROJECT_STATUS_LABELS,
@@ -32,6 +32,7 @@ interface Props {
 
 export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
   const [retrying, setRetrying] = useState(false);
+  const [retitling, setRetitling] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Rehacer un proyecto terminado tira lo que ya había y puede costar mucho
@@ -64,6 +65,19 @@ export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
       setError(cause instanceof Error ? cause.message : "No se ha podido reprocesar");
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function retitle() {
+    setRetitling(true);
+    setError(null);
+    try {
+      await retitleProject(project.id);
+      onChanged();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "No se han podido reescribir");
+    } finally {
+      setRetitling(false);
     }
   }
 
@@ -166,6 +180,21 @@ export function ProjectCard({ project, onChanged, workerBusy = false }: Props) {
             className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
           >
             {expanded ? "Ocultar clips" : "Ver clips"}
+          </button>
+        )}
+
+        {/* Reescribir títulos no vuelve a renderizar: el título no está dentro
+            del MP4. Cuesta segundos, así que va separado del botón que sí
+            reprocesa el vídeo entero. */}
+        {(completed || needsReview) && (
+          <button
+            type="button"
+            disabled={retitling}
+            onClick={() => void retitle()}
+            title="Vuelve a escribir los títulos con la IA. No re-renderiza nada"
+            className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-white/20 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {retitling ? "Encolando…" : "Retitular"}
           </button>
         )}
 

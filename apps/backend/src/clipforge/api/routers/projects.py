@@ -34,6 +34,7 @@ from clipforge.db.models import (
 )
 from clipforge.services.source.urls import validate_source_url
 from clipforge.worker.tasks.pipeline import process_project
+from clipforge.worker.tasks.retitle import retitle_project
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 logger = get_logger(__name__)
@@ -218,6 +219,35 @@ async def retry_project(
     await repo.session.refresh(project)
 
     logger.info("project.retried", project_id=str(project.id))
+    return ProjectDetail.from_model(project)
+
+
+@router.post(
+    "/{project_id}/retitle",
+    response_model=ProjectDetail,
+    summary="Reescribir solo los títulos de los clips",
+)
+async def retitle(project_id: uuid.UUID, repo: ProjectRepo) -> ProjectDetail:
+    """Vuelve a titular sin volver a renderizar.
+
+    El título no está dentro del MP4, así que cambiarlo no cuesta ni una
+    descarga ni un segundo de GPU. Es lo que hace que probar otro enfoque
+    —o aplicar unas palabras clave recién escritas— sea cuestión de
+    segundos en lugar de reprocesar el vídeo entero.
+
+    No toca el gancho: ese va incrustado en los píxeles, y cambiarlo sin
+    renderizar dejaría la base de datos diciendo una cosa y el vídeo
+    enseñando otra.
+    """
+    project = await _require(project_id, repo)
+
+    if ProjectStatus(project.status).is_running:
+        raise ConflictError(
+            f"El proyecto está en curso ({project.status}); espera a que termine para retitularlo"
+        )
+
+    retitle_project.delay(str(project.id))
+    logger.info("project.retitle_requested", project_id=str(project.id))
     return ProjectDetail.from_model(project)
 
 

@@ -85,6 +85,22 @@ CLICHES = (
 #: con cuatro ya no se parecería ningún título a otro.
 SAME_OPENING_WORDS = 3
 
+#: Tope de la descripción. YouTube admite muchísimo más, pero solo se leen
+#: las dos primeras líneas antes del "…más"; lo que sobre es relleno.
+MAX_DESCRIPTION_CHARS = 400
+
+#: La etiqueta que decide que el vídeo entre en el carrusel de Shorts. Va
+#: siempre y va la primera, aunque el modelo se olvide de ella.
+SHORTS_TAG = "shorts"
+
+#: Con más etiquetas no se gana alcance, se gana ruido: YouTube ignora las
+#: que no encajan y una lista larga parece spam.
+MAX_HASHTAGS = 5
+
+#: Una etiqueta es una palabra pegada: fuera espacios, almohadillas y
+#: cualquier signo. "Kai Cenat" se busca como #KaiCenat.
+_TAG_JUNK = re.compile(r"\W+", flags=re.UNICODE)
+
 _WHITESPACE = re.compile(r"\s+")
 #: Comillas de todo tipo: los modelos envuelven el título entero en ellas.
 #: Van escapadas porque las tipográficas se confunden a simple vista con
@@ -99,12 +115,14 @@ _LEADING_JUNK = re.compile(r"^[^\w\"'¿¡(]+", flags=re.UNICODE)
 
 
 class RawTitle(BaseModel):
-    """Los títulos propuestos para un clip."""
+    """Lo que el redactor propone para un clip."""
 
     model_config = ConfigDict(extra="ignore")
 
     clip: int = Field(description="Número del clip que se te ha dado")
     titles: list[str] = Field(description="Variantes del título, de mejor a peor")
+    description: str = Field(description="Dos o tres frases para la caja de YouTube")
+    hashtags: list[str] = Field(description="Etiquetas temáticas, sin almohadilla")
 
 
 class RawTitles(BaseModel):
@@ -145,6 +163,8 @@ def write_titles(
             build_titles_system_prompt(
                 max_chars=settings.title_max_chars,
                 variants=settings.title_variants,
+                # Una la pone el sistema, así que al modelo se le piden el resto.
+                hashtags=MAX_HASHTAGS - 1,
                 keywords=bool(context.keywords),
             ),
             build_titles_user_prompt(briefs, context),
@@ -159,7 +179,7 @@ def write_titles(
     logger.info(
         "ai.titles_written",
         clips=len(clips),
-        rewritten=sum(1 for old, new in zip(clips, titled, strict=True) if old.title != new.title),
+        rewritten=sum(1 for a, b in zip(clips, titled, strict=True) if a.title != b.title),
         seconds=round(time.perf_counter() - started, 1),
     )
     return titled
@@ -201,6 +221,43 @@ def opening(title: str) -> str:
     return " ".join(title.casefold().split()[:SAME_OPENING_WORDS])
 
 
+def publishable_variants(variants: Sequence[str], *, max_chars: int) -> list[str]:
+    """Variantes limpias y publicables, ordenadas por preferencia.
+
+    Aplica solo los filtros que dependen del texto y de nada más. Los que
+    dependen del contexto —no repetir el gancho, no repetir el arranque de
+    otro clip— los aplica `choose_title`, porque el mismo título puede valer
+    en un clip y estorbar en el siguiente.
+
+    Las que caben van delante y las recortadas detrás: un título que el
+    modelo escribió corto es mejor que uno al que le hemos cortado el final,
+    aunque lo propusiera antes.
+    """
+    fits: list[str] = []
+    trimmed: list[str] = []
+    seen: set[str] = set()
+
+    for variant in variants:
+        title = clean_title(variant)
+        if not title or is_cliche(title) or shouts(title):
+            continue
+
+        bucket = fits
+        if len(title) > max_chars:
+            # Suele ser un título correcto al que le sobra una subordinada,
+            # así que se rescata en vez de tirarlo.
+            title = _trim(title, max_chars)
+            bucket = trimmed
+
+        key = title.casefold()
+        if not title or key in seen:
+            continue
+        seen.add(key)
+        bucket.append(title)
+
+    return [*fits, *trimmed]
+
+
 def choose_title(
     variants: Sequence[str],
     *,
@@ -209,42 +266,59 @@ def choose_title(
     taken_openings: set[str],
     max_chars: int,
 ) -> str:
-    """Elige la primera variante publicable.
+    """Elige la primera variante publicable que además encaja en este clip.
 
-    El orden importa: el modelo las devuelve de mejor a peor, así que bajar por
-    la lista es bajar por calidad. Si ninguna pasa limpia se recorta la mejor
-    por la última palabra que quepa, y si aun así no queda nada aprovechable
-    manda el título del análisis: peor, pero real.
+    El orden importa: el modelo las devuelve de mejor a peor, así que bajar
+    por la lista es bajar por calidad. Si ninguna sirve manda el título del
+    análisis: peor, pero real.
     """
-    candidates = [title for title in (clean_title(variant) for variant in variants) if title]
-
-    for title in candidates:
-        if len(title) > max_chars:
-            continue
-        if is_cliche(title) or shouts(title):
-            continue
-        # El gancho ya va escrito en pantalla: repetirlo en el título gasta las
-        # dos líneas de texto del clip en decir lo mismo.
+    for title in publishable_variants(variants, max_chars=max_chars):
+        # El gancho ya va escrito en pantalla: repetirlo en el título gasta
+        # los dos textos del clip en decir lo mismo.
         if hook and title.casefold() == hook.strip().casefold():
             continue
         if opening(title) in taken_openings:
             continue
         return title
 
-    # Ninguna limpia. Se rescata la mejor recortando: suele ser un título
-    # correcto al que le sobra una subordinada.
-    for title in candidates:
-        if is_cliche(title) or shouts(title):
-            continue
-        trimmed = _trim(title, max_chars)
-        if trimmed and opening(trimmed) not in taken_openings:
-            return trimmed
-
     return fallback
 
 
-def parse_titles(content: str) -> dict[int, list[str]]:
-    """Extrae {número de clip: variantes} de la respuesta del modelo.
+def clean_description(raw: str) -> str | None:
+    """Deja la descripción en una línea de texto plano, o None si no hay nada."""
+    text = _WHITESPACE.sub(" ", raw).strip()
+    text = text.strip(_WRAPPING_QUOTES).strip()
+    if not text:
+        return None
+    return _trim(text, MAX_DESCRIPTION_CHARS) or None
+
+
+def clean_hashtags(raw: Sequence[str]) -> tuple[str, ...]:
+    """Normaliza las etiquetas y garantiza que `shorts` va la primera.
+
+    Una etiqueta es una palabra pegada, así que fuera espacios, almohadillas
+    y signos: "Kai Cenat" se busca como #KaiCenat. `shorts` se pone aquí y no
+    se le pide al modelo porque es la que decide que el vídeo entre en el
+    carrusel, y olvidarla cuesta demasiado como para dejarla a su criterio.
+    """
+    tags = [SHORTS_TAG]
+    seen = {SHORTS_TAG}
+
+    for item in raw:
+        tag = _TAG_JUNK.sub("", item)
+        key = tag.casefold()
+        if not tag or key in seen:
+            continue
+        seen.add(key)
+        tags.append(tag)
+        if len(tags) == MAX_HASHTAGS:
+            break
+
+    return tuple(tags)
+
+
+def parse_titles(content: str) -> dict[int, RawTitle]:
+    """Extrae lo que el modelo propone para cada clip, por número de clip.
 
     Raises:
         ExternalToolError: si lo que ha devuelto no encaja con el esquema.
@@ -264,7 +338,7 @@ def parse_titles(content: str) -> dict[int, list[str]]:
             details={"error": str(exc)[:400], "content": text[:400]},
         ) from exc
 
-    return {entry.clip: entry.titles for entry in payload.clips}
+    return {entry.clip: entry for entry in payload.clips}
 
 
 # -------------------------------------------------------------------- privado
@@ -288,27 +362,49 @@ def _brief(number: int, clip: ClipSuggestion) -> TitleBrief:
     )
 
 
-def _apply(
-    clips: Sequence[ClipSuggestion], proposals: dict[int, list[str]]
-) -> list[ClipSuggestion]:
-    """Sustituye el título de cada clip por la mejor variante admisible.
+def _apply(clips: Sequence[ClipSuggestion], proposals: dict[int, RawTitle]) -> list[ClipSuggestion]:
+    """Vuelca sobre cada clip el título, las variantes y los metadatos.
 
-    Los arranques ya usados se acumulan mientras se recorre la lista: es lo que
-    impide que los cinco clips de un vídeo se llamen todos "The farmer slips…".
+    Los arranques ya usados se acumulan mientras se recorre la lista: es lo
+    que impide que los cinco clips de un vídeo se llamen todos "The farmer
+    slips…".
+
+    Las variantes se guardan aunque no se usen. La llamada ya está pagada, y
+    tenerlas en la base de datos convierte "no me gusta este título" en un
+    clic en el editor en lugar de en otra llamada al modelo.
     """
     taken: set[str] = set()
     titled: list[ClipSuggestion] = []
 
     for number, clip in enumerate(clips, start=1):
+        proposal = proposals.get(number)
+        if proposal is None:
+            # El modelo se ha saltado este clip: se queda como estaba.
+            taken.add(opening(clip.title))
+            titled.append(clip)
+            continue
+
         title = choose_title(
-            proposals.get(number, []),
+            proposal.titles,
             fallback=clip.title,
             hook=clip.hook,
             taken_openings=taken,
             max_chars=settings.title_max_chars,
         )
         taken.add(opening(title))
-        titled.append(clip if title == clip.title else replace(clip, title=title))
+
+        variants = publishable_variants(proposal.titles, max_chars=settings.title_max_chars)
+        titled.append(
+            replace(
+                clip,
+                title=title,
+                # El elegido no se repite entre las alternativas: en el editor
+                # son "los otros títulos", no "todos los títulos".
+                title_variants=tuple(other for other in variants if other != title),
+                description=clean_description(proposal.description),
+                hashtags=clean_hashtags(proposal.hashtags),
+            )
+        )
 
     return titled
 

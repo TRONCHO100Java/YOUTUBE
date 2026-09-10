@@ -64,7 +64,7 @@ from clipforge.services.ai import (
 from clipforge.services.ai.chunking import to_analysis_segments
 from clipforge.services.download.base import VideoDownloader
 from clipforge.services.download.ytdlp import YtDlpDownloader
-from clipforge.services.export import ClipExport, export_project
+from clipforge.services.export import ClipExport, SourceCredit, export_project
 from clipforge.services.render_clip import ClipRenderPlan, RenderSetup, build_setup, render_clip
 from clipforge.services.signals import SignalTimeline, build_timeline
 from clipforge.services.source.urls import validate_source_url
@@ -564,6 +564,12 @@ def _save_candidates(
                     hook=item.hook,
                     reason=item.reason,
                     transcript_excerpt=item.transcript_excerpt,
+                    # Listas vacías a NULL: "no hay variantes" y "hay una
+                    # lista de cero variantes" son lo mismo, y NULL lo dice
+                    # sin obligar a nadie a mirar dentro.
+                    title_variants=list(item.title_variants) or None,
+                    description=item.description,
+                    hashtags=list(item.hashtags) or None,
                     score=item.score,
                     hook_score=item.scores.hook if item.scores else None,
                     curiosity_score=item.scores.curiosity if item.scores else None,
@@ -655,6 +661,7 @@ def export_project_clips(project_id: uuid.UUID, log: Any) -> None:
     with sync_session_scope() as session:
         project = _require(session, project_id)
         title = project.title
+        credit = SourceCredit(title=project.title, author=project.author, url=project.source_url)
         rows = list(
             session.execute(
                 select(ClipCandidate, GeneratedClip)
@@ -671,12 +678,16 @@ def export_project_clips(project_id: uuid.UUID, log: Any) -> None:
                 subtitles=(
                     absolute_from_storage(clip.subtitle_path) if clip.subtitle_path else None
                 ),
+                description=candidate.description,
+                hashtags=tuple(candidate.hashtags or []),
+                start=candidate.start_time,
+                end=candidate.end_time,
             )
             for position, (candidate, clip) in enumerate(rows, start=1)
         ]
 
     try:
-        folder = export_project(project_id, title, clips)
+        folder = export_project(project_id, title, clips, credit)
     except OSError as exc:
         log.warning("pipeline.export_failed", error=str(exc))
         return

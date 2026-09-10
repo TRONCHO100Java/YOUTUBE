@@ -14,11 +14,17 @@ import pytest
 from clipforge.core.errors import ExternalToolError
 from clipforge.services.ai.base import AnalysisContext, ClipSuggestion
 from clipforge.services.ai.titles import (
+    MAX_DESCRIPTION_CHARS,
+    MAX_HASHTAGS,
+    SHORTS_TAG,
     choose_title,
+    clean_description,
+    clean_hashtags,
     clean_title,
     is_cliche,
     opening,
     parse_titles,
+    publishable_variants,
     shouts,
     write_titles,
 )
@@ -46,9 +52,20 @@ def suggestion(
 
 
 def answer(*titles_per_clip: list[str]) -> str:
-    """Respuesta del modelo con las variantes de cada clip, en orden."""
+    """Respuesta del modelo con las variantes de cada clip, en orden.
+
+    La descripción y las etiquetas van iguales para todos: los tests que
+    miran los títulos no deben depender de ellas, y los que miran los
+    metadatos las escriben aparte.
+    """
     clips = [
-        {"clip": number, "titles": titles} for number, titles in enumerate(titles_per_clip, start=1)
+        {
+            "clip": number,
+            "titles": titles,
+            "description": "A farmer loses his footing and ends up in the water.",
+            "hashtags": ["farmfails", "slapstick"],
+        }
+        for number, titles in enumerate(titles_per_clip, start=1)
     ]
     return json.dumps({"clips": clips})
 
@@ -181,13 +198,15 @@ def test_with_nothing_usable_the_analysis_title_stands() -> None:
 
 # ------------------------------------------------------------------- respuesta
 def test_a_response_wrapped_in_a_code_fence_still_parses() -> None:
-    fenced = '```json\n{"clips": [{"clip": 1, "titles": ["He lands on the roof"]}]}\n```'
-    assert parse_titles(fenced) == {1: ["He lands on the roof"]}
+    """Los modelos ponen el bloque de código pese al esquema."""
+    fenced = f"```json{chr(10)}{answer(['He lands on the roof'])}{chr(10)}```"
+
+    assert parse_titles(fenced)[1].titles == ["He lands on the roof"]
 
 
 def test_a_response_that_is_not_the_agreed_shape_is_an_error() -> None:
     with pytest.raises(ExternalToolError):
-        parse_titles('{"titulos": ["algo"]}')
+        parse_titles('{"clips": [{"clip": 1}]}')
 
 
 def test_a_response_that_is_not_even_json_is_an_error() -> None:
@@ -262,3 +281,104 @@ def test_no_clips_means_no_call_at_all() -> None:
         raise AssertionError("no hay nada que titular")
 
     assert write_titles([], CONTEXT, ask=explode) == []
+
+
+# ------------------------------------------------------------------ metadatos
+def test_the_description_comes_back_in_one_clean_line() -> None:
+    assert clean_description("  Two   lines\nof description  ") == "Two lines of description"
+
+
+def test_an_empty_description_is_no_description() -> None:
+    assert clean_description("   ") is None
+
+
+def test_a_description_longer_than_the_box_shows_gets_cut_by_the_word() -> None:
+    text = "palabra " * 200
+    cleaned = clean_description(text)
+
+    assert cleaned is not None
+    assert len(cleaned) <= MAX_DESCRIPTION_CHARS
+    assert not cleaned.endswith("pala")
+
+
+def test_shorts_is_always_the_first_hashtag() -> None:
+    """Es la etiqueta que decide que el vídeo entre en el carrusel."""
+    assert clean_hashtags(["farmfails"])[0] == SHORTS_TAG
+
+
+def test_a_hashtag_is_one_word_without_the_hash() -> None:
+    assert clean_hashtags(["#Kai Cenat!"]) == (SHORTS_TAG, "KaiCenat")
+
+
+def test_accents_survive_a_hashtag() -> None:
+    assert clean_hashtags(["Peñíscola"]) == (SHORTS_TAG, "Peñíscola")
+
+
+def test_the_model_repeating_shorts_does_not_duplicate_it() -> None:
+    assert clean_hashtags(["shorts", "Shorts", "#SHORTS"]) == (SHORTS_TAG,)
+
+
+def test_the_hashtag_list_stops_before_it_looks_like_spam() -> None:
+    many = [f"tag{index}" for index in range(20)]
+    assert len(clean_hashtags(many)) == MAX_HASHTAGS
+
+
+def test_the_clip_carries_its_description_and_hashtags() -> None:
+    (clip,) = write_titles(
+        [suggestion()], CONTEXT, ask=lambda system, user: answer(["He lands on the roof"])
+    )
+
+    assert clip.description == "A farmer loses his footing and ends up in the water."
+    assert clip.hashtags == (SHORTS_TAG, "farmfails", "slapstick")
+
+
+def test_the_titles_not_chosen_are_kept_to_swap_later() -> None:
+    """La llamada ya está pagada: cambiar de título debe ser un clic, no otra."""
+    (clip,) = write_titles(
+        [suggestion()],
+        CONTEXT,
+        ask=lambda system, user: answer(
+            ["He lands on the roof", "The car gives way under him", "Why did he jump"]
+        ),
+    )
+
+    assert clip.title == "He lands on the roof"
+    assert clip.title_variants == ("The car gives way under him", "Why did he jump")
+
+
+def test_a_variant_that_would_be_rejected_is_not_offered_either() -> None:
+    """Las alternativas del editor pasan el mismo filtro que el título elegido."""
+    (clip,) = write_titles(
+        [suggestion()],
+        CONTEXT,
+        ask=lambda system, user: answer(
+            ["He lands on the roof", "You won't believe this", "THE CAR GIVES WAY"]
+        ),
+    )
+
+    assert clip.title == "He lands on the roof"
+    assert clip.title_variants == ()
+
+
+def test_a_variant_that_only_needed_trimming_is_still_offered() -> None:
+    """Un título correcto al que le sobra una subordinada no se tira."""
+    long_variant = "The car gives way under him and the whole roof folds in on itself right away"
+    (clip,) = write_titles(
+        [suggestion()],
+        CONTEXT,
+        ask=lambda system, user: answer(["He lands on the roof", long_variant]),
+    )
+
+    (offered,) = clip.title_variants
+    assert len(offered) <= 60
+    assert long_variant.startswith(offered)
+
+
+def test_the_variants_that_come_back_fit_and_are_ordered_by_preference() -> None:
+    variants = publishable_variants(
+        ["A title that is far too long to publish anywhere at all, really", "Short one"],
+        max_chars=30,
+    )
+
+    assert variants[0] == "Short one"
+    assert all(len(variant) <= 30 for variant in variants)

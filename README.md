@@ -168,6 +168,7 @@ pesado (Whisper y FFmpeg).
 | `GET` | `/api/projects/{id}/signals` | Curva de volumen, cortes de plano, movimiento y bloques candidatos |
 | `GET` | `/api/projects/{id}/source` | El vídeo original. Admite `Range`, para poder recortarlo en el navegador |
 | `POST` | `/api/projects/{id}/retry` | Reprocesa un proyecto terminado o fallido |
+| `POST` | `/api/projects/{id}/retitle` | Reescribe solo los títulos. No re-renderiza |
 | `DELETE` | `/api/projects/{id}` | Borra el proyecto y sus ficheros en disco |
 | `GET` | `/api/projects/{id}/clips` | Clips renderizados, con resolución, peso y encoder usado |
 | `GET` | `/api/clips/{id}` | Detalle de un clip |
@@ -398,6 +399,58 @@ Si ninguna variante pasa limpia, se recorta la mejor por la última palabra que
 quepa. Si aun así no queda nada, **manda el título del análisis**: peor, pero
 real. Y si la llamada entera falla, se registra y los clips salen como estaban.
 El titulado es una mejora, no un requisito.
+
+**Las variantes que no se usan se guardan** (`clip_candidates.title_variants`).
+La llamada ya está pagada, así que cambiar de título es un clic en el editor —no
+otra llamada al modelo—, y las alternativas que se ofrecen han pasado el mismo
+filtro que la elegida.
+
+### Retitular sin re-renderizar
+
+El título **no está dentro del MP4**. Cambiarlo es cambiar una fila y renombrar un
+enlace, así que exigir un reprocesado completo —descarga, Whisper, análisis,
+ffmpeg— para probar otro título era cobrar horas de GPU por un trabajo de
+segundos. El botón **Retitular** vuelve a llamar al redactor sobre los candidatos
+que ya existen y regenera la carpeta de exportación. Nada más.
+
+Es también la forma de aplicar unas palabras clave que se escribieron tarde.
+
+Dos cosas que **no** hace, y por el mismo motivo:
+
+- **No toca el gancho.** Ese sí va incrustado en los píxeles; cambiarlo sin
+  renderizar dejaría la base de datos diciendo una cosa y el vídeo enseñando otra.
+- **No toca los clips manuales.** Su título lo ha escrito una persona.
+
+Va a la cola ligera (`clipforge.titles.*`, fuera de la ruta de `clipforge.
+pipeline.*`): no necesita la tarjeta, así que con un segundo worker no tendrá que
+esperar detrás de una transcripción.
+
+### Lo que se pega en YouTube
+
+El redactor no escribe solo el título: escribe también la **descripción** y las
+**etiquetas**. La etiqueta `shorts` la pone el sistema siempre —es la que decide
+que el vídeo entre en el carrusel, y olvidarla cuesta demasiado como para dejarla
+a criterio del modelo— y el resto se normalizan a una palabra pegada sin
+almohadilla: "Kai Cenat" se busca como `#KaiCenat`.
+
+El **crédito al canal original lo compone el backend**, no el modelo: el modelo no
+conoce la URL, y el crédito es justo lo que separa un clip de un reupload a ojos
+de YouTube. No es decoración.
+
+En la carpeta de exportación, junto a cada `NN - título.mp4`:
+
+```
+storage/export/{título del vídeo}/
+├── 01 - Farmer slips into the mud and water.mp4
+├── 01 - Farmer slips into the mud and water.txt   ← título, descripción, etiquetas, crédito
+└── youtube.csv                                     ← los cinco en una tabla, para subir en tanda
+```
+
+El `.txt` va en bloques, en el mismo orden en que los pide el formulario de
+YouTube, para poder copiar de arriba abajo. El CSV usa punto y coma porque Excel
+en español con coma lo mete todo en una columna, y ahí deja de servir para lo
+único que sirve. La descripción del CSV lleva el crédito ya incorporado: se abre
+en otro programa, y volver aquí a por él no vale.
 
 ### Idioma de los textos
 
@@ -685,8 +738,10 @@ TikTok sin saber cuál es. Al terminar el render se deja una segunda vista:
 storage/export/{título del vídeo}/
 ├─ 01 - El negocio de la muerte - ¿Cuánto vale.mp4
 ├─ 01 - El negocio de la muerte - ¿Cuánto vale.srt
+├─ 01 - El negocio de la muerte - ¿Cuánto vale.txt   ← lo que se pega en YouTube
 ├─ 02 - El mejor currículum es hacer el trabajo antes de ser contratado.mp4
-└─ ...
+├─ ...
+└─ youtube.csv                                        ← todos, para subir en tanda
 ```
 
 Ordenados por ranking y con tildes y espacios, que es lo que hace que la carpeta

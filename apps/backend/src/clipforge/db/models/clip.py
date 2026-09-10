@@ -18,6 +18,7 @@ from sqlalchemy import (
     Uuid,
 )
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from clipforge.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -51,6 +52,17 @@ class ClipCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     hook: Mapped[str | None] = mapped_column(Text, nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    #: Los otros titulos que propuso el redactor, ya validados. Se guardan
+    #: aunque no se usen: la llamada al modelo ya esta pagada, y tenerlos
+    #: aqui convierte "no me gusta este titulo" en un clic en el editor.
+    title_variants: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    #: Descripcion para la caja de YouTube, solo la parte que describe el
+    #: clip. El credito al canal original se compone al exportar, porque lo
+    #: sabe el sistema y no el modelo.
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Etiquetas sin almohadilla. La primera es siempre "shorts".
+    hashtags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
     # Desglose de viralidad (total = 100).
     score: Mapped[float] = mapped_column(Float, nullable=False, default=0)

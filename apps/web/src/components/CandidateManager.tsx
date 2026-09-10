@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { InlineText } from "@/components/InlineText";
+import { PublishingNotes } from "@/components/PublishingNotes";
 import {
   clipSubtitlesUrl,
   clipVideoUrl,
@@ -156,6 +157,30 @@ function CandidateRow({
         <StatusBadge status={candidate.status} />
       </div>
 
+      {/* Los otros títulos que propuso el redactor. La llamada al modelo ya
+          está pagada, así que probar otro es un clic y no otra llamada. */}
+      {candidate.title_variants.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wide text-zinc-600">
+            Otros títulos
+          </span>
+          {candidate.title_variants.map((variant) => (
+            <button
+              key={variant}
+              type="button"
+              disabled={busy !== null}
+              title="Usar este título"
+              onClick={() =>
+                void run("title", () => updateCandidate(candidate.id, { title: variant }))
+              }
+              className="rounded-md border border-white/10 px-2 py-0.5 text-[11px] text-zinc-400 transition hover:border-emerald-400/40 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {variant}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* El gancho no es decorativo: se escribe SOBRE el vídeo en los primeros
           segundos, y en un clip sin diálogo es lo único escrito que lleva. */}
       <div className="mt-2 flex items-baseline gap-2 border-l-2 border-emerald-500/40 pl-3">
@@ -175,6 +200,12 @@ function CandidateRow({
           onSave={(value) => run("hook", () => updateCandidate(candidate.id, { hook: value }))}
         />
       </div>
+
+      <PublishingNotes
+        title={candidate.title}
+        description={candidate.description}
+        hashtags={candidate.hashtags}
+      />
 
       {candidate.reason && (
         <p className="mt-2 text-xs leading-relaxed text-zinc-500">{candidate.reason}</p>
