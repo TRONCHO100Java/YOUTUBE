@@ -29,7 +29,7 @@ from clipforge.api.schemas.discovery import (
 from clipforge.core.config import settings
 from clipforge.core.errors import ClipForgeError, ConflictError, NotFoundError
 from clipforge.core.logging import get_logger
-from clipforge.db.models import Project, ProjectStatus, WatchedChannel
+from clipforge.db.models import Project, ProjectStatus, PublishChannel, WatchedChannel
 from clipforge.services.source.discover import (
     DiscoveryFilters,
     VideoResult,
@@ -166,6 +166,7 @@ async def add_channel(payload: ChannelCreate, session: DbSession) -> ChannelRead
         max_duration=payload.max_duration,
         min_views=payload.min_views,
         keywords=(payload.keywords or "").strip() or None,
+        publish_channel_id=await _require_destination(payload.publish_channel_id, session),
         last_video_published_at=latest,
     )
     session.add(channel)
@@ -192,6 +193,11 @@ async def update_channel(
         channel.min_views = payload.min_views
     if payload.keywords is not None:
         channel.keywords = payload.keywords.strip() or None
+    # Aquí sí importa si el campo *venía* en el cuerpo: mandar null es la forma
+    # de decir "estos clips ya no van a un canal fijo", y con la regla de los
+    # demás campos eso sería indistinguible de no mandarlo.
+    if "publish_channel_id" in payload.model_fields_set:
+        channel.publish_channel_id = await _require_destination(payload.publish_channel_id, session)
 
     await session.commit()
     await session.refresh(channel)
@@ -227,6 +233,23 @@ async def _require_channel(channel_uuid: uuid.UUID, session: DbSession) -> Watch
     if channel is None:
         raise NotFoundError(f"Canal {channel_uuid} no encontrado")
     return channel
+
+
+async def _require_destination(
+    destination: uuid.UUID | None, session: DbSession
+) -> uuid.UUID | None:
+    """Comprueba que el canal de destino existe antes de guardarlo.
+
+    Sin esto, un id inventado no fallaría aquí sino en el ``COMMIT``, como un
+    error de integridad convertido en un 500 sin explicación. Vale más un 404
+    que diga cuál es el canal que no existe.
+    """
+    if destination is None:
+        return None
+
+    if await session.get(PublishChannel, destination) is None:
+        raise NotFoundError(f"Canal de publicación {destination} no encontrado")
+    return destination
 
 
 async def _mark_known(session: DbSession, videos: list[VideoResult]) -> list[VideoResultRead]:

@@ -101,6 +101,9 @@ def _poll_one(channel_id: str, log: Any) -> int:
         )
         watermark = watched.last_video_published_at
         keywords = watched.keywords
+        # El destino se copia AHORA y no se deduce despues: si mañana se
+        # borra el canal vigilado, estos clips ya saben a dónde iban.
+        destination = watched.publish_channel_id
 
         fresh = [video for video in videos if _is_new(video, watermark)]
         accepted = [video for video in fresh if filters.accepts(video)][
@@ -126,6 +129,7 @@ def _poll_one(channel_id: str, log: Any) -> int:
                 source_type=SourceType.YOUTUBE,
                 status=ProjectStatus.CREATED,
                 keywords=keywords,
+                publish_channel_id=destination,
             )
             session.add(project)
             created.append(project)

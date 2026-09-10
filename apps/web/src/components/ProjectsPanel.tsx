@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { ChannelsPanel } from "@/components/ChannelsPanel";
 import { NewProjectForm } from "@/components/NewProjectForm";
 import { ProjectCard } from "@/components/ProjectCard";
+import { PublishChannelsPanel } from "@/components/PublishChannelsPanel";
 import { VideoSearch } from "@/components/VideoSearch";
 import { usePolling } from "@/hooks/usePolling";
 import { listProjects } from "@/lib/api";
@@ -36,6 +37,7 @@ export function ProjectsPanel() {
           principio del trabajo: de dónde salen los vídeos. */}
       <VideoSearch onQueued={refresh} />
       <ChannelsPanel />
+      <PublishChannelsPanel />
 
       <section aria-label="Proyectos" className="mt-10">
         <h2 className="text-sm font-medium text-zinc-400">Proyectos</h2>

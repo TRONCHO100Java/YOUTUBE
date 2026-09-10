@@ -10,6 +10,8 @@ import type {
   SignalTimeline,
   TaskRef,
   TaskState,
+  PublishChannel,
+  RoutedClip,
   VideoResult,
   WatchedChannel,
   BatchResult,
@@ -208,6 +210,7 @@ export function addChannel(input: {
   maxDuration?: number;
   minViews?: number;
   keywords?: string;
+  publishChannelId?: string | null;
 }): Promise<WatchedChannel> {
   return apiFetch<WatchedChannel>("/api/channels", {
     method: "POST",
@@ -217,13 +220,18 @@ export function addChannel(input: {
       max_duration: input.maxDuration ?? null,
       min_views: input.minViews ?? null,
       keywords: input.keywords?.trim() || null,
+      publish_channel_id: input.publishChannelId || null,
     }),
   });
 }
 
+/**
+ * `publish_channel_id: null` significa "quítale el destino", no "no lo toques".
+ * Por eso se manda solo cuando viene en el parche.
+ */
 export function updateChannel(
   id: string,
-  patch: { enabled?: boolean; keywords?: string },
+  patch: { enabled?: boolean; keywords?: string; publish_channel_id?: string | null },
 ): Promise<WatchedChannel> {
   return apiFetch<WatchedChannel>(`/api/channels/${id}`, {
     method: "PATCH",
@@ -240,6 +248,63 @@ export function checkChannel(id: string): Promise<TaskRef> {
   return apiFetch<TaskRef>(`/api/channels/${id}/check`, { method: "POST" });
 }
 
+// --------------------------------------------- canales de publicacion ---
+
+/** Canales propios donde se publican los clips. */
+export function listPublishChannels(): Promise<PublishChannel[]> {
+  return apiFetch<PublishChannel[]>("/api/publish-channels");
+}
+
+export function createPublishChannel(input: {
+  name: string;
+  url: string;
+  niche?: string;
+  people?: string[];
+  topics?: string[];
+  kinds?: string[];
+  minScore?: number;
+  priority?: number;
+  notes?: string;
+}): Promise<PublishChannel> {
+  return apiFetch<PublishChannel>("/api/publish-channels", {
+    method: "POST",
+    body: JSON.stringify({
+      name: input.name,
+      url: input.url,
+      niche: input.niche?.trim() || null,
+      people: input.people ?? [],
+      topics: input.topics ?? [],
+      kinds: input.kinds ?? [],
+      min_score: input.minScore ?? 0,
+      priority: input.priority ?? 0,
+      notes: input.notes?.trim() || null,
+    }),
+  });
+}
+
+export function updatePublishChannel(
+  id: string,
+  patch: { enabled?: boolean; priority?: number; minScore?: number },
+): Promise<PublishChannel> {
+  return apiFetch<PublishChannel>(`/api/publish-channels/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      enabled: patch.enabled,
+      priority: patch.priority,
+      min_score: patch.minScore,
+    }),
+  });
+}
+
+export function deletePublishChannel(id: string): Promise<void> {
+  return apiFetchVoid(`/api/publish-channels/${id}`, { method: "DELETE" });
+}
+
+/** Vista previa del reparto: qué clip va a qué canal. No cambia nada. */
+export function listRouting(): Promise<RoutedClip[]> {
+  return apiFetch<RoutedClip[]>("/api/publish-channels/routing");
+}
+
 /** Momentos detectados por la IA, del mejor al peor. */
 export function listCandidates(projectId: string): Promise<ClipCandidate[]> {
   return apiFetch<ClipCandidate[]>(`/api/projects/${projectId}/candidates`);
@@ -253,6 +318,21 @@ export function listCandidates(projectId: string): Promise<ClipCandidate[]> {
  */
 export function publishClip(clipId: string): Promise<TaskRef> {
   return apiFetch<TaskRef>(`/api/clips/${clipId}/publish`, { method: "POST" });
+}
+
+/**
+ * Marca el clip como ya publicado, subido como se haya subido.
+ *
+ * Sin esto el sistema no se entera de una subida a mano y el clip volvería a
+ * la bandeja del canal en cada exportación.
+ */
+export function markClipUploaded(clipId: string): Promise<GeneratedClip> {
+  return apiFetch<GeneratedClip>(`/api/clips/${clipId}/uploaded`, { method: "POST" });
+}
+
+/** Borra el MP4 para dejar sitio. La ficha del clip se conserva. */
+export function deleteClipFile(clipId: string): Promise<GeneratedClip> {
+  return apiFetch<GeneratedClip>(`/api/clips/${clipId}/file`, { method: "DELETE" });
 }
 
 /** Clips ya renderizados, del mejor al peor. */

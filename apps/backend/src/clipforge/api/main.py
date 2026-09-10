@@ -16,7 +16,15 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from clipforge import __version__
-from clipforge.api.routers import candidates, clips, discovery, health, projects, tasks
+from clipforge.api.routers import (
+    candidates,
+    clips,
+    discovery,
+    health,
+    projects,
+    publish_channels,
+    tasks,
+)
 from clipforge.core.config import settings
 from clipforge.core.errors import ClipForgeError
 from clipforge.core.logging import configure_logging, get_logger
@@ -84,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(candidates.router, prefix=API_PREFIX)
     app.include_router(tasks.router, prefix=API_PREFIX)
     app.include_router(discovery.router, prefix=API_PREFIX)
+    app.include_router(publish_channels.router, prefix=API_PREFIX)
     return app
 
 

@@ -46,6 +46,8 @@ class GeneratedClipRead(BaseModel):
     #: Id en YouTube si ya se subio. None = todavia no ha salido de aqui.
     youtube_video_id: str | None
     published_at: datetime | None
+    #: Cuándo se borró el fichero para dejar sitio. La ficha sigue aquí.
+    deleted_at: datetime | None
     #: Con que privacidad quedo. Un proyecto de API sin auditar sube
     #: SIEMPRE en privado, y creer que algo esta publicado cuando no lo
     #: esta es peor que no haberlo subido.
@@ -83,6 +85,7 @@ class GeneratedClipRead(BaseModel):
             created_at=clip.created_at,  # type: ignore[attr-defined]
             youtube_video_id=clip.youtube_video_id,  # type: ignore[attr-defined]
             published_at=clip.published_at,  # type: ignore[attr-defined]
+            deleted_at=clip.deleted_at,  # type: ignore[attr-defined]
             privacy_status=clip.privacy_status,  # type: ignore[attr-defined]
             view_count=clip.view_count,  # type: ignore[attr-defined]
             like_count=clip.like_count,  # type: ignore[attr-defined]

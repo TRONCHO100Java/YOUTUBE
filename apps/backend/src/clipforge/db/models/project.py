@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import Float, Index, String, Text
+from sqlalchemy import Float, ForeignKey, Index, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +50,13 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: que hace que un titulo compita en busqueda. Se guardan tal y como se
     #: escriben; separarlas en terminos es cosa de quien las usa.
     keywords: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    #: Canal propio al que van los clips de este proyecto. Se hereda del
+    #: canal vigilado que lo trajo, y se guarda AQUI y no se deduce cada vez
+    #: para que siga siendo cierto aunque luego se borre aquel.
+    publish_channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("publish_channels.id", ondelete="SET NULL"), nullable=True
+    )
 
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Id de la tarea Celery en curso, para poder cancelar o inspeccionar.

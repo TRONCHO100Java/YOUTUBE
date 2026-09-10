@@ -165,6 +165,11 @@ class GeneratedClip(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: no lo esta es peor que no haberlo subido.
     privacy_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
+    #: Cuando se borro el fichero para dejar sitio. La FILA se conserva: el
+    #: clip existio, se subio y tiene vistas, y esa historia vale mas que los
+    #: treinta megas que ocupaba. Con esto puesto, el MP4 ya no esta.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     #: Rendimiento real, releido cada dia. Es lo unico que puede decir si la
     #: rubrica de siete dimensiones acierta o es decoracion.
     view_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

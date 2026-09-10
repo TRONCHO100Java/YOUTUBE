@@ -16,6 +16,7 @@ from clipforge.db.models.enums import (
     SourceType,
 )
 from clipforge.db.models.project import Project
+from clipforge.db.models.publish_channel import PublishChannel
 from clipforge.db.models.transcript import Transcript, TranscriptSegment
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "GeneratedClip",
     "Project",
     "ProjectStatus",
+    "PublishChannel",
     "SourceType",
     "Transcript",
     "TranscriptSegment",

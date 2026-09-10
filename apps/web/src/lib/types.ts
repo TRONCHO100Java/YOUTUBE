@@ -133,6 +133,8 @@ export interface GeneratedClip {
   /** Id en YouTube si ya se subió. null = todavía no ha salido de aquí. */
   youtube_video_id: string | null;
   published_at: string | null;
+  /** Cuándo se borró el fichero para dejar sitio. La ficha sigue aquí. */
+  deleted_at: string | null;
   /** Con qué privacidad quedó: un proyecto de API sin auditar sube en privado. */
   privacy_status: string | null;
   /** Rendimiento real. Lo único que puede decir si la nota acertó. */
@@ -174,12 +176,58 @@ export interface WatchedChannel {
   max_duration: number | null;
   min_views: number | null;
   keywords: string | null;
+  /** A qué canal propio van los clips de este. */
+  publish_channel_id: string | null;
   last_video_published_at: string | null;
   last_checked_at: string | null;
   /** Por qué falló la última revisión: un canal callado y uno roto se ven igual sin esto. */
   last_error: string | null;
   projects_created: number;
   created_at: string;
+}
+
+// ------------------------------------------------- canales de publicacion ---
+
+/**
+ * Un canal propio al que se suben clips.
+ *
+ * No confundir con `WatchedChannel`, que es de donde SALEN los vídeos. Este es
+ * el otro extremo: dónde acaban los clips ya hechos.
+ */
+export interface PublishChannel {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  youtube_channel_id: string | null;
+  /** Qué acepta este canal. Vacío = cualquiera. */
+  niche: string | null;
+  people: string[];
+  topics: string[];
+  kinds: string[];
+  /** Puede ser más exigente que el sistema. */
+  min_score: number;
+  /** A igualdad de encaje, gana el más alto. */
+  priority: number;
+  notes: string | null;
+  created_at: string;
+}
+
+/** Un clip listo para subir y el canal que le toca. */
+export interface RoutedClip {
+  clip_id: string;
+  candidate_id: string;
+  project_title: string | null;
+  title: string;
+  description: string | null;
+  hashtags: string[];
+  score: number;
+  duration: number | null;
+  tags: Record<string, unknown> | null;
+  /** null = no encaja en ninguno; lo reparte una persona. */
+  channel_id: string | null;
+  channel_name: string | null;
+  youtube_video_id: string | null;
 }
 
 /** Lo que devuelve un endpoint que encola trabajo. */

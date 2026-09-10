@@ -10,9 +10,10 @@ primera revision de un canal encole sus quince ultimos videos de golpe.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from clipforge.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -44,6 +45,14 @@ class WatchedChannel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: Palabras clave que heredan los proyectos creados desde este canal. Un
     #: canal de un streamer concreto siempre aporta los mismos nombres.
     keywords: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    #: A que canal propio van los clips de este. Es lo que convierte
+    #: "vigilo a Speed" en "los clips de Speed acaban en mi canal de Speed",
+    #: sin depender de que el etiquetador acierte: aqui el destino es
+    #: explicito y manda sobre el reparto por etiquetas.
+    publish_channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("publish_channels.id", ondelete="SET NULL"), nullable=True
+    )
 
     #: Marca de agua: fecha de publicacion del video mas reciente que ya se ha
     #: visto. Se fija en el alta con el ultimo video del canal, para que dar de

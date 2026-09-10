@@ -5,7 +5,13 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { PublishButton } from "@/components/PublishButton";
 import { PublishingNotes } from "@/components/PublishingNotes";
-import { clipSubtitlesUrl, clipVideoUrl, listClips } from "@/lib/api";
+import {
+  clipSubtitlesUrl,
+  clipVideoUrl,
+  deleteClipFile,
+  listClips,
+  markClipUploaded,
+} from "@/lib/api";
 import type { GeneratedClip } from "@/lib/types";
 
 function formatTime(seconds: number): string {
@@ -42,6 +48,9 @@ interface Props {
 export function ClipList({ projectId, emptyAction, reloadKey = 0 }: Props) {
   const [clips, setClips] = useState<GeneratedClip[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Por clip y no global: si se marca uno mientras se borra otro, cada botón
+  // tiene que saber si le toca a él.
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     listClips(projectId)
@@ -55,7 +64,37 @@ export function ClipList({ projectId, emptyAction, reloadKey = 0 }: Props) {
     load();
   }, [load, reloadKey]);
 
-  if (error) {
+  /**
+   * Aplica un cambio a un clip y sustituye solo ese, sin releer la lista.
+   *
+   * Releer entera devolvería el mismo resultado a costa de repintar doce
+   * reproductores de vídeo, y el usuario vería parpadear la página por haber
+   * pulsado un botón en una tarjeta.
+   */
+  async function act(
+    clipId: string,
+    action: () => Promise<GeneratedClip>,
+  ): Promise<void> {
+    if (busyId !== null) return;
+
+    setBusyId(clipId);
+    setError(null);
+    try {
+      const updated = await action();
+      setClips(
+        (current) =>
+          current?.map((clip) => (clip.id === updated.id ? updated : clip)) ?? null,
+      );
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "No se ha podido");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Solo se traga la lista si no hay nada que enseñar. Un fallo al marcar un
+  // clip no puede hacer desaparecer los otros once.
+  if (error !== null && clips === null) {
     return <p className="px-4 pb-4 text-sm text-rose-400">{error}</p>;
   }
 
@@ -84,18 +123,43 @@ export function ClipList({ projectId, emptyAction, reloadKey = 0 }: Props) {
   }
 
   return (
+    <>
+      {error !== null && (
+        <p role="alert" className="px-4 pb-2 text-sm text-rose-400">
+          {error}
+        </p>
+      )}
+
     <ol className="grid gap-3 px-3 pb-3 sm:grid-cols-2">
-      {clips.map((clip, index) => (
+      {clips.map((clip, index) => {
+        const gone = clip.deleted_at !== null;
+        const uploaded = clip.published_at !== null;
+        const busy = busyId === clip.id;
+
+        return (
         <li
           key={clip.id}
-          className="overflow-hidden rounded-lg border border-white/5 bg-black/20"
+          className={`overflow-hidden rounded-lg border border-white/5 bg-black/20 ${
+            gone ? "opacity-60" : ""
+          }`}
         >
-          <video
-            src={clipVideoUrl(clip.id)}
-            controls
-            preload="metadata"
-            className="aspect-[9/16] w-full bg-black"
-          />
+          {/* Sin fichero no hay reproductor: un <video> roto haría pensar que
+              el clip falló, cuando lo que pasó es que se liberó sitio. */}
+          {gone ? (
+            <div className="flex aspect-[9/16] w-full flex-col items-center justify-center gap-1 bg-black/40 px-4 text-center">
+              <p className="text-sm text-zinc-500">Fichero borrado</p>
+              <p className="text-xs text-zinc-600">
+                La ficha se conserva: título, nota y vistas siguen aquí.
+              </p>
+            </div>
+          ) : (
+            <video
+              src={clipVideoUrl(clip.id)}
+              controls
+              preload="metadata"
+              className="aspect-[9/16] w-full bg-black"
+            />
+          )}
 
           <div className="p-3">
             <div className="flex items-baseline gap-2">
@@ -108,6 +172,11 @@ export function ClipList({ projectId, emptyAction, reloadKey = 0 }: Props) {
                 {Math.round(clip.score)}
                 <span className="text-xs font-normal text-zinc-600">/100</span>
               </span>
+              {uploaded && (
+                <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[11px] text-emerald-400">
+                  Subido
+                </span>
+              )}
             </div>
 
             <p className="mt-1 text-sm text-zinc-100">{clip.title}</p>
@@ -134,32 +203,68 @@ export function ClipList({ projectId, emptyAction, reloadKey = 0 }: Props) {
               {formatTime(clip.end_time)}
             </p>
 
-            <div className="mt-3 flex gap-2">
-              {/* Enlaces normales: el navegador descarga sin pasar por JS. */}
-              <a
-                href={clipVideoUrl(clip.id)}
-                download
-                className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-zinc-950 transition hover:bg-emerald-400"
-              >
-                Descargar MP4
-              </a>
-              {clip.has_subtitle_file && (
+            {!gone && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {/* Enlaces normales: el navegador descarga sin pasar por JS. */}
                 <a
-                  href={clipSubtitlesUrl(clip.id)}
+                  href={clipVideoUrl(clip.id)}
                   download
-                  className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+                  className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-zinc-950 transition hover:bg-emerald-400"
                 >
-                  .srt
+                  Descargar MP4
                 </a>
-              )}
-            </div>
+                {clip.has_subtitle_file && (
+                  <a
+                    href={clipSubtitlesUrl(clip.id)}
+                    download
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-white/20 hover:text-zinc-100"
+                  >
+                    .srt
+                  </a>
+                )}
 
-            <div className="mt-2">
-              <PublishButton clip={clip} onPublished={load} />
-            </div>
+                {/* Subir a mano por Studio es una vía legítima, y hoy la única
+                    que publica en público sin pasar la auditoría de Google. Sin
+                    este botón el sistema no se entera y el clip volvería a la
+                    carpeta del canal en cada exportación. */}
+                {!uploaded && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void act(clip.id, () => markClipUploaded(clip.id))}
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-emerald-400/40 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {busy ? "Marcando…" : "Marcar subido"}
+                  </button>
+                )}
+
+                {/* Solo cuando ya está subido: borrar el único sitio donde
+                    existe el vídeo antes de publicarlo sería tirar el trabajo. */}
+                {uploaded && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void act(clip.id, () => deleteClipFile(clip.id))}
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-500 transition hover:border-rose-500/40 hover:text-rose-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {busy
+                      ? "Borrando…"
+                      : `Borrar fichero · ${formatSize(clip.filesize_bytes)}`}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!gone && !uploaded && (
+              <div className="mt-2">
+                <PublishButton clip={clip} onPublished={load} />
+              </div>
+            )}
           </div>
         </li>
-      ))}
+        );
+      })}
     </ol>
+    </>
   );
 }

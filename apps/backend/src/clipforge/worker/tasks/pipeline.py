@@ -45,6 +45,7 @@ from clipforge.db.models import (
     GeneratedClip,
     Project,
     ProjectStatus,
+    PublishChannel,
     Transcript,
     TranscriptSegment,
 )
@@ -708,7 +709,15 @@ def _render_stage(project_id: uuid.UUID, log: Any) -> None:
 
 
 def export_project_clips(project_id: uuid.UUID, log: Any) -> None:
-    """Deja una copia de los clips con nombres legibles, para subirlos a mano.
+    """Deja los clips pendientes en la carpeta del canal al que van.
+
+    La carpeta es la **bandeja de subida** de un canal, no un archivo: lleva
+    lo que queda por subir y nada más. Por eso los clips ya marcados como
+    subidos no entran, y los que se han borrado para dejar sitio tampoco.
+    Abrirla y ver cinco ficheros significa que quedan cinco por subir.
+
+    Si el proyecto tiene canal de destino, va a su carpeta; si no, a una con
+    el título del vídeo, como hasta ahora.
 
     Nunca tumba el pipeline: los clips ya están renderizados y registrados en
     base de datos, y esto es solo una vista derivada. Que falle un enlace no
@@ -719,13 +728,17 @@ def export_project_clips(project_id: uuid.UUID, log: Any) -> None:
 
     with sync_session_scope() as session:
         project = _require(session, project_id)
-        title = project.title
+        folder_name = _export_folder_name(session, project)
         credit = SourceCredit(title=project.title, author=project.author, url=project.source_url)
         rows = list(
             session.execute(
                 select(ClipCandidate, GeneratedClip)
                 .join(GeneratedClip, GeneratedClip.candidate_id == ClipCandidate.id)
                 .where(ClipCandidate.project_id == project_id)
+                # Lo ya subido y lo ya borrado no son pendientes: la carpeta
+                # es una bandeja, no un archivo.
+                .where(GeneratedClip.published_at.is_(None))
+                .where(GeneratedClip.deleted_at.is_(None))
                 .order_by(ClipCandidate.rank)
             ).all()
         )
@@ -746,7 +759,7 @@ def export_project_clips(project_id: uuid.UUID, log: Any) -> None:
         ]
 
     try:
-        folder = export_project(project_id, title, clips, credit)
+        folder = export_project(project_id, folder_name, clips, credit)
     except OSError as exc:
         log.warning("pipeline.export_failed", error=str(exc))
         return
@@ -812,6 +825,20 @@ def subtitle_segments(session: Session, project_id: uuid.UUID) -> list[SourceSeg
         SourceSegment(start=row.start_time, end=row.end_time, text=row.text)
         for row in _transcript_rows(session, project_id)
     ]
+
+
+def _export_folder_name(session: Session, project: Project) -> str | None:
+    """Nombre de la carpeta: el canal de destino si lo hay, si no el vídeo.
+
+    Con varios canales a la vez, agrupar por vídeo obligaría a entrar en
+    ocho carpetas para subir a tres canales. Agrupar por canal es el orden
+    en el que de verdad se trabaja.
+    """
+    if project.publish_channel_id is None:
+        return project.title
+
+    channel = session.get(PublishChannel, project.publish_channel_id)
+    return channel.name if channel else project.title
 
 
 def clip_peaks(signals: dict[str, Any] | None) -> list[Peak]:

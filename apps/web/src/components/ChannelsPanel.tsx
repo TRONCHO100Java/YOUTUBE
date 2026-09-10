@@ -8,10 +8,11 @@ import {
   checkChannel,
   deleteChannel,
   listChannels,
+  listPublishChannels,
   updateChannel,
 } from "@/lib/api";
 import { POLL_INTERVAL_MS } from "@/lib/config";
-import type { WatchedChannel } from "@/lib/types";
+import type { PublishChannel, WatchedChannel } from "@/lib/types";
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "nunca";
@@ -40,9 +41,18 @@ export function ChannelsPanel() {
     POLL_INTERVAL_MS,
   );
 
+  // Los destinos posibles: hacen falta aquí para poder decir "lo de Speed va a
+  // mi canal de Speed" sin salir de esta pantalla.
+  const destinationsFetcher = useCallback(() => listPublishChannels(), []);
+  const { data: destinations } = usePolling<PublishChannel[]>(
+    destinationsFetcher,
+    POLL_INTERVAL_MS,
+  );
+
   const [channel, setChannel] = useState("");
   const [keywords, setKeywords] = useState("");
   const [maxDuration, setMaxDuration] = useState("");
+  const [destination, setDestination] = useState("");
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -57,10 +67,12 @@ export function ChannelsPanel() {
         channel: channel.trim(),
         keywords,
         maxDuration: maxDuration ? Number(maxDuration) * 60 : undefined,
+        publishChannelId: destination || null,
       });
       setChannel("");
       setKeywords("");
       setMaxDuration("");
+      setDestination("");
       refresh();
     } catch (cause: unknown) {
       setFormError(cause instanceof Error ? cause.message : "No se ha podido añadir");
@@ -106,6 +118,23 @@ export function ChannelsPanel() {
           title="Ignora los vídeos más largos que esto. Sin valor, no filtra por duración"
           className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400/30 sm:w-28"
         />
+        {/* Elegir el destino al dar de alta es lo que cierra el circuito: a
+            partir de aquí sus vídeos nuevos se buscan, se clipean y aparecen
+            en la carpeta de ese canal sin tocar nada más. */}
+        <select
+          value={destination}
+          onChange={(event) => setDestination(event.target.value)}
+          aria-label="Canal de destino"
+          title="Dónde acabarán los clips de este canal"
+          className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-300 focus:border-emerald-400/50 focus:outline-none sm:w-48"
+        >
+          <option value="">Reparto por etiquetas</option>
+          {destinations?.map((option) => (
+            <option key={option.id} value={option.id}>
+              → {option.name}
+            </option>
+          ))}
+        </select>
         <button
           type="submit"
           disabled={busy || channel.trim().length === 0}
@@ -161,6 +190,30 @@ export function ChannelsPanel() {
                   </p>
                 )}
               </div>
+
+              {/* El destino es explícito y manda sobre el reparto por
+                  etiquetas: es la diferencia entre "vigilo a Speed" y "los
+                  clips de Speed acaban en mi canal de Speed". */}
+              <select
+                value={watched.publish_channel_id ?? ""}
+                onChange={(event) =>
+                  void act(() =>
+                    updateChannel(watched.id, {
+                      publish_channel_id: event.target.value || null,
+                    }),
+                  )
+                }
+                aria-label={`Canal de destino de ${watched.title}`}
+                title="A qué canal propio van los clips de este"
+                className="shrink-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-300 focus:border-emerald-400/50 focus:outline-none"
+              >
+                <option value="">Reparto por etiquetas</option>
+                {destinations?.map((destination) => (
+                  <option key={destination.id} value={destination.id}>
+                    → {destination.name}
+                  </option>
+                ))}
+              </select>
 
               <button
                 type="button"

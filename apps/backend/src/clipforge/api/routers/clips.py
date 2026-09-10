@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse
 
 from clipforge.api.deps import ClipRepo
@@ -57,6 +58,76 @@ async def publish_clip(clip_id: uuid.UUID, repo: ClipRepo) -> TaskRef:
     return TaskRef(task_id=str(task.id), state=str(task.state))
 
 
+@router.post(
+    "/{clip_id}/uploaded",
+    response_model=GeneratedClipRead,
+    summary="Marcar el clip como ya subido",
+)
+async def mark_uploaded(
+    clip_id: uuid.UUID,
+    repo: ClipRepo,
+    video_id: str | None = Query(
+        None, max_length=32, description="Id del vídeo en YouTube, si lo tienes"
+    ),
+) -> GeneratedClipRead:
+    """Anota que este clip ya está publicado, lo hayas subido como lo hayas subido.
+
+    Existe porque subir a mano por Studio es una vía legítima —y ahora mismo
+    la única que publica en público sin pasar la auditoría de Google—, y sin
+    esto el sistema no se entera: el clip seguiría apareciendo como pendiente
+    y volvería a la carpeta de subida en cada exportación.
+
+    El id del vídeo es opcional: lo normal al subir por Studio es no tenerlo
+    a mano, y exigirlo convertiría un botón en un formulario.
+    """
+    clip = await _require(clip_id, repo)
+
+    clip.published_at = clip.published_at or datetime.now(UTC)
+    if video_id:
+        clip.youtube_video_id = video_id.strip() or None
+    if clip.privacy_status is None:
+        # Subido por fuera: no sabemos con qué privacidad quedó, y decir
+        # "público" sin saberlo sería inventarse un dato.
+        clip.privacy_status = "manual"
+
+    await repo.session.commit()
+    logger.info("clip.marked_uploaded", clip_id=str(clip_id))
+    return GeneratedClipRead.from_model(await _require(clip_id, repo))
+
+
+@router.delete(
+    "/{clip_id}/file",
+    response_model=GeneratedClipRead,
+    summary="Borrar el fichero del clip y dejar sitio",
+)
+async def delete_file(clip_id: uuid.UUID, repo: ClipRepo) -> GeneratedClipRead:
+    """Borra el MP4 y sus subtítulos, y conserva la ficha.
+
+    La fila NO se borra, y es deliberado: el clip existió, se subió y tiene
+    vistas, y esa historia es lo que permite saber si la rúbrica acierta.
+    Vale mucho más que los treinta megas que ocupaba el fichero.
+
+    Lo que desaparece son los bytes. Después de esto el clip sigue en la
+    lista, marcado como borrado, y ya no se puede reproducir ni descargar.
+    """
+    clip = await _require(clip_id, repo)
+
+    for relative in (clip.file_path, clip.subtitle_path):
+        if not relative:
+            continue
+        try:
+            path = absolute_from_storage(relative)
+        except ValueError:
+            continue
+        path.unlink(missing_ok=True)
+
+    clip.deleted_at = datetime.now(UTC)
+    await repo.session.commit()
+
+    logger.info("clip.file_deleted", clip_id=str(clip_id))
+    return GeneratedClipRead.from_model(await _require(clip_id, repo))
+
+
 @router.get(
     "/{clip_id}/video",
     summary="Vídeo del clip",
@@ -71,6 +142,11 @@ async def get_clip_video(clip_id: uuid.UUID, repo: ClipRepo) -> FileResponse:
     descargarlo entero.
     """
     clip = await _require(clip_id, repo)
+    if clip.deleted_at is not None:
+        raise NotFoundError(
+            "El fichero de este clip se borró para dejar sitio. La ficha se "
+            "conserva, pero el vídeo ya no está."
+        )
     path = _resolve(clip.file_path)
 
     return FileResponse(

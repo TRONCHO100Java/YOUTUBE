@@ -78,16 +78,25 @@ class ChannelCreate(BaseModel):
     keywords: str | None = Field(
         None, max_length=500, description="Palabras clave para los proyectos de este canal"
     )
+    publish_channel_id: uuid.UUID | None = Field(
+        None, description="Canal propio al que van los clips de este"
+    )
 
 
 class ChannelUpdate(BaseModel):
-    """Cuerpo de PATCH /channels/{id}. Todo opcional."""
+    """Cuerpo de PATCH /channels/{id}. Todo opcional.
+
+    El destino se lee con ``model_fields_set`` y no por ``is not None``: es el
+    único campo que se puede querer *vaciar*, y con la regla de los demás
+    ("None = no lo toques") no habría forma de decir "ya no va a ningún canal".
+    """
 
     enabled: bool | None = None
     min_duration: int | None = Field(None, ge=0)
     max_duration: int | None = Field(None, ge=0)
     min_views: int | None = Field(None, ge=0)
     keywords: str | None = Field(None, max_length=500)
+    publish_channel_id: uuid.UUID | None = None
 
 
 class ChannelRead(BaseModel):
@@ -104,6 +113,9 @@ class ChannelRead(BaseModel):
     max_duration: int | None
     min_views: int | None
     keywords: str | None
+    #: A qué canal propio van los clips de este. null = se reparten por
+    #: etiquetas, como antes de que existiera esto.
+    publish_channel_id: uuid.UUID | None
     last_video_published_at: datetime | None
     last_checked_at: datetime | None
     #: Por qué falló la última revisión. Un canal que lleva días callado y uno
