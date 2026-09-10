@@ -34,3 +34,8 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# Estado local de celery beat: cuando disparo cada tarea por ultima vez.
+# Es de esta maquina y de este momento, no del proyecto.
+celerybeat-schedule*
+celerybeat.pid
